@@ -14,6 +14,7 @@ def load_config(config_filepath):
         return collections.OrderedDict()
 
 def display_screen(window, input_file, num_lines):
+    window.clear()
     current_position = input_file.tell()
     for i in range(num_lines):
         line = input_file.readline()
@@ -23,7 +24,7 @@ def display_screen(window, input_file, num_lines):
 
 def seek_up(input_file, num_lines):
     BEGINNING_OF_FILE = 0
-    while num_lines > 0:
+    while num_lines + 1 > 0:
         if input_file.tell() == BEGINNING_OF_FILE:
             return
         input_file.seek(-1, os.SEEK_CUR)
@@ -31,6 +32,7 @@ def seek_up(input_file, num_lines):
         input_file.seek(-1, os.SEEK_CUR)
         if char == '\n':
             num_lines -= 1
+    input_file.seek(1, os.SEEK_CUR)
 
 def seek_down(input_file, num_lines):
     END_OF_FILE = ''
@@ -58,6 +60,10 @@ def main(window, input_file):
             seek_down(input_file, num_lines / 2)
         elif user_input == 'u':
             seek_up(input_file, num_lines / 2)
+        elif user_input == 'f':
+            seek_down(input_file, num_lines)
+        elif user_input == 'b':
+            seek_up(input_file, num_lines)
         elif user_input == 'q':
             break
         display_screen(window, input_file, num_lines)
