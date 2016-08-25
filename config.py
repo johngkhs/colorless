@@ -4,6 +4,6 @@ import collections
 import curses
 
 regex_to_color = collections.OrderedDict({
-    'Debug' : 3,
-    'Error' : curses.COLOR_RED
+    r'(\d a)' : 1,
+    r'(\d)' : 2,
 })
