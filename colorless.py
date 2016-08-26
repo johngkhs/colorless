@@ -15,23 +15,18 @@ def load_config(config_filepath):
     else:
         return collections.OrderedDict()
 
-def display_screen(window, regex_to_color, input_file, term_num_rows):
+def display_screen(window, compiled_regex_to_color, input_file, term_num_rows):
     window.clear()
     current_position = input_file.tell()
     for i in range(term_num_rows):
         line = input_file.readline()
         window.addstr(i, 0, line)
-        for regex, color in regex_to_color.items():
-            tokens = re.split(regex, line)
+        for regex, color in compiled_regex_to_color.items():
+            tokens = regex.split(line)
             start_index = 0
             for index, token in enumerate(tokens):
-                try:
-                    if index % 2 == 1:
-                        window.addstr(i, start_index, token, curses.color_pair(color))
-                except:
-                    window.clear()
-                    e = sys.exc_info()[0]
-                    window.addstr(i, 0, str(e))
+                if index % 2 == 1:
+                    window.addstr(i, start_index, token, curses.color_pair(color))
                 start_index += len(token)
     input_file.seek(current_position)
     window.refresh()
@@ -78,12 +73,16 @@ def seek_down(input_file, num_lines, term_num_rows):
 
 def main(window, input_file, regex_to_color):
     curses.use_default_colors()
+    compiled_regex_to_color = collections.OrderedDict()
+    for i, (regex, color) in enumerate(regex_to_color.items(), start=1):
+        curses.init_pair(i, color, -1)
+        compiled_regex_to_color[re.compile(regex)] = i
+
     term_num_rows = window.getmaxyx()[0] - 1
+    pad = curses.newpad(100, 100)
     # window.scrollok(True)
     # window.setscrreg(0, term_num_rows)
-    curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLUE)
-    display_screen(window, regex_to_color, input_file, term_num_rows)
+    display_screen(window, compiled_regex_to_color, input_file, term_num_rows)
 
     while True:
         user_input = window.getkey()
@@ -105,7 +104,7 @@ def main(window, input_file, regex_to_color):
             pass
         elif user_input == 'q':
             break
-        display_screen(window, regex_to_color, input_file, term_num_rows)
+        display_screen(window, compiled_regex_to_color, input_file, term_num_rows)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
