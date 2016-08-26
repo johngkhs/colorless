@@ -11,16 +11,16 @@ def load_config(config_filepath):
     if config_filepath:
         config = {}
         execfile(config_filepath, config)
-        DEFAULT_BACKGROUND_COLOR = -1
         regex_to_color = collections.OrderedDict()
         for color_number, (regex, color) in enumerate(config['regex_to_color'].items(), start = 1):
+            DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_number, color, DEFAULT_BACKGROUND_COLOR)
             regex_to_color[re.compile(regex)] = color_number
         return regex_to_color
     else:
         return collections.OrderedDict()
 
-def read_line_with_wrapping(input_file, term_num_cols):
+def readline_with_line_wrapping(input_file, term_num_cols):
     line = input_file.readline()
     if len(line) > term_num_cols:
         input_file.seek(term_num_cols - len(line), os.SEEK_CUR)
@@ -28,10 +28,9 @@ def read_line_with_wrapping(input_file, term_num_cols):
     return line
 
 def display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols):
-    window.clear()
     current_position = input_file.tell()
     for i in range(term_num_rows):
-        line = read_line_with_wrapping(input_file, term_num_cols)
+        line = readline_with_line_wrapping(input_file, term_num_cols)
         window.addstr(i, 0, line)
         for regex, color in regex_to_color.items():
             tokens = regex.split(line)
@@ -59,13 +58,13 @@ def clamp_num_lines(input_file, num_lines, term_num_rows, term_num_cols):
     current_position = input_file.tell()
     clamped_num_lines = 0
     while term_num_rows > 0:
-        if read_line_with_wrapping(input_file, term_num_cols) == '':
+        if readline_with_line_wrapping(input_file, term_num_cols) == '':
             break
         term_num_rows -= 1
 
     if term_num_rows == 0:
         for i in range(1, num_lines + 1):
-            if read_line_with_wrapping(input_file, term_num_cols) == '':
+            if readline_with_line_wrapping(input_file, term_num_cols) == '':
                 break
             clamped_num_lines = i
 
@@ -86,7 +85,6 @@ def seek_down(input_file, num_lines, term_num_rows, term_num_cols):
 def main(window, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
-
     term_num_rows, term_num_cols = tuple(n - 1 for n in window.getmaxyx())
     # window.scrollok(True)
     # window.setscrreg(0, term_num_rows)
