@@ -82,6 +82,10 @@ def seek_down(input_file, num_lines, term_num_rows, term_num_cols):
         elif char == '\n':
             num_lines -= 1
 
+def go_to_end_of_file(input_file, term_num_rows):
+    input_file.seek(0, os.SEEK_END)
+    seek_up(input_file, term_num_rows)
+
 def main(window, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
@@ -89,28 +93,25 @@ def main(window, input_file, config_filepath):
     # window.scrollok(True)
     # window.setscrreg(0, term_num_rows)
     display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols)
+    input_to_action = {
+        'j' : lambda: seek_down(input_file, 1, term_num_rows, term_num_cols),
+        'k' : lambda: seek_up(input_file, 1),
+        'd' : lambda: seek_down(input_file, term_num_rows / 2, term_num_rows, term_num_cols),
+        'u' : lambda: seek_up(input_file, term_num_rows / 2),
+        'f' : lambda: seek_down(input_file, term_num_rows, term_num_rows, term_num_cols),
+        'b' : lambda: seek_up(input_file, term_num_rows),
+        'g' : lambda: input_file.seek(0, os.SEEK_SET),
+        'G' : lambda: go_to_end_of_file(input_file, term_num_rows),
+        'q' : lambda: sys.exit(0)
+    }
 
     while True:
-        user_input = window.getkey()
-        if user_input == 'j':
-            seek_down(input_file, 1, term_num_rows, term_num_cols)
-        elif user_input == 'k':
-            seek_up(input_file, 1)
-        elif user_input == 'd':
-            seek_down(input_file, term_num_rows / 2, term_num_rows, term_num_cols)
-        elif user_input == 'u':
-            seek_up(input_file, term_num_rows / 2)
-        elif user_input == 'f':
-            seek_down(input_file, term_num_rows, term_num_rows, term_num_cols)
-        elif user_input == 'b':
-            seek_up(input_file, term_num_rows)
-        elif user_input == 'g':
-            input_file.seek(0, os.SEEK_SET)
-        elif user_input == 'G':
-            input_file.seek(0, os.SEEK_END)
-            seek_up(input_file, term_num_rows)
-        elif user_input == 'q':
-            break
+        user_input = window.getch()
+        if 0 <= user_input <= 255 and chr(user_input) in input_to_action:
+            input_to_action[chr(user_input)]()
+        elif user_input == curses.KEY_RESIZE:
+            window.clear()
+            term_num_rows, term_num_cols = tuple(n - 1 for n in window.getmaxyx())
         display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols)
 
 if __name__ == '__main__':
