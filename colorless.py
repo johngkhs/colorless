@@ -52,7 +52,7 @@ def clamp_num_lines(input_file, num_lines, term_num_rows):
         term_num_rows -= 1
 
     if term_num_rows == 0:
-        for i in range(0, num_lines + 1):
+        for i in range(1, num_lines + 1):
             if input_file.readline() == '':
                 break
             clamped_num_lines = i
@@ -99,9 +99,10 @@ def main(window, input_file, regex_to_color):
         elif user_input == 'b':
             seek_up(input_file, term_num_rows)
         elif user_input == 'g':
-            pass
+            input_file.seek(0, os.SEEK_SET)
         elif user_input == 'G':
-            pass
+            input_file.seek(0, os.SEEK_END)
+            seek_up(input_file, term_num_rows)
         elif user_input == 'q':
             break
         display_screen(window, compiled_regex_to_color, input_file, term_num_rows)
