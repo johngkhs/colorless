@@ -5,6 +5,7 @@ import collections
 import curses
 import os
 import re
+import sys
 
 def load_config(config_filepath):
     if config_filepath:
@@ -14,18 +15,23 @@ def load_config(config_filepath):
     else:
         return collections.OrderedDict()
 
-def display_screen(window, regex_to_color, input_file, num_lines):
+def display_screen(window, regex_to_color, input_file, term_num_rows):
     window.clear()
     current_position = input_file.tell()
-    for i in range(num_lines):
+    for i in range(term_num_rows):
         line = input_file.readline()
         window.addstr(i, 0, line)
         for regex, color in regex_to_color.items():
             tokens = re.split(regex, line)
             start_index = 0
             for index, token in enumerate(tokens):
-                if index % 2 == 1:
-                    window.addstr(i, start_index, token, curses.color_pair(color))
+                try:
+                    if index % 2 == 1:
+                        window.addstr(i, start_index, token, curses.color_pair(color))
+                except:
+                    window.clear()
+                    e = sys.exc_info()[0]
+                    window.addstr(i, 0, str(e))
                 start_index += len(token)
     input_file.seek(current_position)
     window.refresh()
@@ -42,7 +48,26 @@ def seek_up(input_file, num_lines):
             num_lines -= 1
     input_file.seek(1, os.SEEK_CUR)
 
-def seek_down(input_file, num_lines):
+def clamp_num_lines(input_file, num_lines, term_num_rows):
+    current_position = input_file.tell()
+    clamped_num_lines = 0
+    while term_num_rows > 0:
+        if input_file.readline() == '':
+            break
+        term_num_rows -= 1
+
+    if term_num_rows == 0:
+        for i in range(0, num_lines + 1):
+            if input_file.readline() == '':
+                break
+            clamped_num_lines = i
+
+    input_file.seek(current_position)
+    return clamped_num_lines
+
+def seek_down(input_file, num_lines, term_num_rows):
+    num_lines =  clamp_num_lines(input_file, num_lines, term_num_rows)
+
     END_OF_FILE = ''
     while num_lines > 0:
         char = input_file.read(1)
@@ -53,30 +78,34 @@ def seek_down(input_file, num_lines):
 
 def main(window, input_file, regex_to_color):
     curses.use_default_colors()
-    num_lines = window.getmaxyx()[0] - 1
+    term_num_rows = window.getmaxyx()[0] - 1
     # window.scrollok(True)
-    # window.setscrreg(0, num_lines)
+    # window.setscrreg(0, term_num_rows)
     curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
     curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLUE)
-    display_screen(window, regex_to_color, input_file, num_lines)
+    display_screen(window, regex_to_color, input_file, term_num_rows)
 
     while True:
         user_input = window.getkey()
         if user_input == 'j':
-            seek_down(input_file, 1)
+            seek_down(input_file, 1, term_num_rows)
         elif user_input == 'k':
             seek_up(input_file, 1)
         elif user_input == 'd':
-            seek_down(input_file, num_lines / 2)
+            seek_down(input_file, term_num_rows / 2, term_num_rows)
         elif user_input == 'u':
-            seek_up(input_file, num_lines / 2)
+            seek_up(input_file, term_num_rows / 2)
         elif user_input == 'f':
-            seek_down(input_file, num_lines)
+            seek_down(input_file, term_num_rows, term_num_rows)
         elif user_input == 'b':
-            seek_up(input_file, num_lines)
+            seek_up(input_file, term_num_rows)
+        elif user_input == 'g':
+            pass
+        elif user_input == 'G':
+            pass
         elif user_input == 'q':
             break
-        display_screen(window, regex_to_color, input_file, num_lines)
+        display_screen(window, regex_to_color, input_file, term_num_rows)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
