@@ -87,9 +87,7 @@ def main(window, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
 
-    term_num_rows = window.getmaxyx()[0] - 1
-    term_num_cols = window.getmaxyx()[1] - 1
-    pad = curses.newpad(100, 100)
+    term_num_rows, term_num_cols = tuple(n - 1 for n in window.getmaxyx())
     # window.scrollok(True)
     # window.setscrreg(0, term_num_rows)
     display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols)
