@@ -11,7 +11,12 @@ def load_config(config_filepath):
     if config_filepath:
         config = {}
         execfile(config_filepath, config)
-        return config['regex_to_color']
+        DEFAULT_BACKGROUND_COLOR = -1
+        regex_to_color = collections.OrderedDict()
+        for color_number, (regex, color) in enumerate(config['regex_to_color'].items(), start = 1):
+            curses.init_pair(color_number, color, DEFAULT_BACKGROUND_COLOR)
+            regex_to_color[re.compile(regex)] = color_number
+        return regex_to_color
     else:
         return collections.OrderedDict()
 
@@ -22,13 +27,13 @@ def read_line_with_wrapping(input_file, term_num_cols):
         return line[:term_num_cols]
     return line
 
-def display_screen(window, compiled_regex_to_color, input_file, term_num_rows, term_num_cols):
+def display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols):
     window.clear()
     current_position = input_file.tell()
     for i in range(term_num_rows):
         line = read_line_with_wrapping(input_file, term_num_cols)
         window.addstr(i, 0, line)
-        for regex, color in compiled_regex_to_color.items():
+        for regex, color in regex_to_color.items():
             tokens = regex.split(line)
             start_index = 0
             for index, token in enumerate(tokens):
@@ -78,19 +83,16 @@ def seek_down(input_file, num_lines, term_num_rows, term_num_cols):
         elif char == '\n':
             num_lines -= 1
 
-def main(window, input_file, regex_to_color):
+def main(window, input_file, config_filepath):
     curses.use_default_colors()
-    compiled_regex_to_color = collections.OrderedDict()
-    for i, (regex, color) in enumerate(regex_to_color.items(), start=1):
-        curses.init_pair(i, color, -1)
-        compiled_regex_to_color[re.compile(regex)] = i
+    regex_to_color = load_config(config_filepath)
 
     term_num_rows = window.getmaxyx()[0] - 1
     term_num_cols = window.getmaxyx()[1] - 1
     pad = curses.newpad(100, 100)
     # window.scrollok(True)
     # window.setscrreg(0, term_num_rows)
-    display_screen(window, compiled_regex_to_color, input_file, term_num_rows, term_num_cols)
+    display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols)
 
     while True:
         user_input = window.getkey()
@@ -113,13 +115,12 @@ def main(window, input_file, regex_to_color):
             seek_up(input_file, term_num_rows)
         elif user_input == 'q':
             break
-        display_screen(window, compiled_regex_to_color, input_file, term_num_rows, term_num_cols)
+        display_screen(window, regex_to_color, input_file, term_num_rows, term_num_cols)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
     arg_parser.add_argument('-c', '--config', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
     args = arg_parser.parse_args()
-    regex_to_color = load_config(args.config)
     with open(args.filepath, 'r') as input_file:
-        curses.wrapper(main, input_file, regex_to_color)
+        curses.wrapper(main, input_file, args.config)
