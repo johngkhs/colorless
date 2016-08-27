@@ -19,6 +19,16 @@ def load_config(config_filepath):
             regex_to_color[re.compile(regex)] = color_number
     return regex_to_color
 
+def color_regexes_in_line(stdscr, row_index, line, regex_to_color):
+    for regex, color in regex_to_color.items():
+        tokens = regex.split(line)
+        curr_col = 0
+        for index, token in enumerate(tokens):
+            token_matches_regex = (index % 2 == 1)
+            if token_matches_regex:
+                stdscr.addstr(row_index, curr_col, token, curses.color_pair(color))
+            curr_col += len(token)
+
 def read_char_backwards(input_file):
     input_file.seek(-1, os.SEEK_CUR)
     char = input_file.read(1)
@@ -58,16 +68,6 @@ def readline_forwards_with_wrapping(input_file, term_num_cols):
         input_file.seek(term_num_cols - len(line), os.SEEK_CUR)
         return line[:term_num_cols]
     return line
-
-def color_regexes_in_line(stdscr, row_index, line, regex_to_color):
-    for regex, color in regex_to_color.items():
-        tokens = regex.split(line)
-        curr_col = 0
-        for index, token in enumerate(tokens):
-            token_matches_regex = (index % 2 == 1)
-            if token_matches_regex:
-                stdscr.addstr(row_index, curr_col, token, curses.color_pair(color))
-            curr_col += len(token)
 
 def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
@@ -139,7 +139,7 @@ def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols
     input_file.seek(0, os.SEEK_END)
     seek_backwards(term_num_rows, input_file, term_num_cols)
 
-def enable_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
+def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     input_file.seek(0, os.SEEK_END)
     stdscr.clear()
     redraw_screen_backwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
@@ -179,7 +179,7 @@ def main(stdscr, input_file, config_filepath):
             stdscr.clear()
             term_num_rows, term_num_cols = get_term_dimensions(stdscr)
         elif user_input == ord('F'):
-            enable_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+            enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
             term_num_rows, term_num_cols = get_term_dimensions(stdscr)
             seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
         redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
