@@ -154,11 +154,11 @@ def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_
 def curses_init_colors():
     MAX_COLOR = 255
     DEFAULT_BACKGROUND_COLOR = -1
+    curses.use_default_colors()
     for color in range(MAX_COLOR):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
 def main(stdscr, input_file, regex_to_color):
-    curses.use_default_colors()
     curses_init_colors()
     term_num_rows, term_num_cols = get_term_dimensions(stdscr)
     stdscr.scrollok(True)
