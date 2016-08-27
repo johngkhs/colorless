@@ -13,10 +13,8 @@ def load_config(config_filepath):
     if config_filepath:
         config = {}
         execfile(config_filepath, config)
-        for color_number, (regex, color) in enumerate(config['regex_to_color'].items(), start = 1):
-            DEFAULT_BACKGROUND_COLOR = -1
-            curses.init_pair(color_number, color, DEFAULT_BACKGROUND_COLOR)
-            regex_to_color[re.compile(regex)] = color_number
+        for (regex, color) in config['regex_to_color'].items():
+            regex_to_color[re.compile(regex)] = color
     return regex_to_color
 
 def color_regexes_in_line(stdscr, row_index, line, regex_to_color):
@@ -153,9 +151,15 @@ def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_
     stdscr.nodelay(0)
     curses.curs_set(1)
 
-def main(stdscr, input_file, config_filepath):
+def curses_init_colors():
+    MAX_COLOR = 255
+    DEFAULT_BACKGROUND_COLOR = -1
+    for color in range(MAX_COLOR):
+        curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
+
+def main(stdscr, input_file, regex_to_color):
     curses.use_default_colors()
-    regex_to_color = load_config(config_filepath)
+    curses_init_colors()
     term_num_rows, term_num_cols = get_term_dimensions(stdscr)
     stdscr.scrollok(True)
     redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
@@ -189,5 +193,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('-c', '--config', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
     args = arg_parser.parse_args()
+    regex_to_color = load_config(args.config)
     with open(args.filepath, 'r') as input_file:
-        curses.wrapper(main, input_file, args.config)
+        curses.wrapper(main, input_file, regex_to_color)
