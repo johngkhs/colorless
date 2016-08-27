@@ -6,6 +6,7 @@ import curses
 import os
 import re
 import sys
+import time
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
@@ -30,21 +31,25 @@ def at_beginning_of_file(input_file):
         return True
     return False
 
-def seekline_backwards_with_wrapping(input_file, term_num_cols):
+def readline_backwards_with_wrapping(input_file, term_num_cols):
     if at_beginning_of_file(input_file):
         return
-    read_char_backwards(input_file)
-    num_chars_read = 0
+    line = read_char_backwards(input_file)
     while True:
         if at_beginning_of_file(input_file):
             break
-        if read_char_backwards(input_file) == '\n':
+        char = read_char_backwards(input_file)
+        if char == '\n':
             input_file.seek(1, os.SEEK_CUR)
             break
-        num_chars_read += 1
-    num_chars_in_line = (num_chars_read % term_num_cols)
-    input_file.seek(num_chars_read - num_chars_in_line, os.SEEK_CUR)
+        else:
+            line = char + line
 
+    wrapped_num_chars_in_line = (len(line) % term_num_cols)
+    if wrapped_num_chars_in_line == 0:
+        wrapped_num_chars_in_line = term_num_cols
+    input_file.seek(len(line) - wrapped_num_chars_in_line, os.SEEK_CUR)
+    return line
 
 def readline_forwards_with_wrapping(input_file, term_num_cols):
     line = input_file.readline()
@@ -74,7 +79,7 @@ def redraw_screen(stdscr, regex_to_color, input_file, term_num_rows, term_num_co
 
 def seek_backwards(line_count, input_file, term_num_cols):
     for i in range(line_count):
-        seekline_backwards_with_wrapping(input_file, term_num_cols)
+        line = readline_backwards_with_wrapping(input_file, term_num_cols)
 
 def clamp_forward_seekable_line_count(line_count, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
@@ -94,12 +99,36 @@ def seek_forwards(line_count, input_file, term_num_rows, term_num_cols):
 def get_term_dimensions(stdscr):
     return tuple(n - 1 for n in stdscr.getmaxyx())
 
+def tail_mode_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
+    input_file.seek(0, os.SEEK_END)
+    stdscr.clear()
+    for row_index in reversed(range(term_num_rows)):
+        line = readline_backwards_with_wrapping(input_file, term_num_cols)
+        if not line:
+            break
+        stdscr.addstr(row_index, 0, line)
+        color_regexes_in_line(stdscr, row_index, line, regex_to_color)
+    stdscr.move(term_num_rows, 0)
+    input_file.seek(0, os.SEEK_END)
+    stdscr.refresh()
+    while True:
+        time.sleep(0.1)
+        while True:
+            line = readline_forwards_with_wrapping(input_file, term_num_rows)
+            if line == '':
+                break
+            stdscr.scroll(1)
+            stdscr.addstr(term_num_rows - 1, 0, line)
+            color_regexes_in_line(stdscr, term_num_rows - 1, line, regex_to_color)
+        stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
+        stdscr.refresh()
+
 def main(stdscr, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
     term_num_rows, term_num_cols = get_term_dimensions(stdscr)
-    # stdscr.scrollok(True)
-    # stdscr.setscrreg(0, term_num_rows)
+    stdscr.scrollok(True)
+    stdscr.setscrreg(0, term_num_rows)
     redraw_screen(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
     input_to_action = {
         'j' : lambda: seek_forwards(1, input_file, term_num_rows, term_num_cols),
@@ -110,6 +139,7 @@ def main(stdscr, input_file, config_filepath):
         'b' : lambda: seek_backwards(term_num_rows, input_file, term_num_cols),
         'g' : lambda: input_file.seek(0, os.SEEK_SET),
         'G' : lambda: (input_file.seek(0, os.SEEK_END), seek_backwards(term_num_rows, input_file, term_num_cols)),
+        'F' : lambda: tail_mode_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols),
         'q' : lambda: sys.exit(os.EX_OK)
     }
 
