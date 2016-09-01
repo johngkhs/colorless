@@ -18,14 +18,14 @@ def load_config(config_filepath):
     return regex_to_color
 
 def increment_cursor(cursor, count, term_num_cols):
-     rows = count / term_num_cols
-     leftover = count % term_num_cols
-     if (cursor[1] + leftover >= term_num_cols):
-         return (cursor[0] + rows + 1, cursor[1] + leftover - term_num_cols)
-     else:
-         return (cursor[0] + rows, cursor[1] + count)
+    while True:
+        if cursor[1] + count < term_num_cols:
+            return (cursor[0], cursor[1] + count)
+        else:
+            count -= term_num_cols
+            cursor = (cursor[0] + 1, cursor[1])
 
-def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols):
+def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols):
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
         curr_cursor = prev_cursor
@@ -34,10 +34,7 @@ def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor,
             if token_matches_regex:
                 stdscr.addstr(token, curses.color_pair(color))
             curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
-            try:
-                stdscr.move(*curr_cursor)
-            except:
-                pass
+            stdscr.move(*curr_cursor)
     stdscr.move(*new_cursor)
 
 def read_char_backwards(input_file):
@@ -90,7 +87,7 @@ def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, te
         prev_cursor = stdscr.getyx()
         stdscr.addstr(line)
         new_cursor = stdscr.getyx()
-        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols)
+        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     input_file.seek(current_position)
     stdscr.addstr(term_num_rows, 0, ':')
     stdscr.refresh()
@@ -127,7 +124,7 @@ def draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_row
         prev_cursor = stdscr.getyx()
         stdscr.addstr(line)
         new_cursor = stdscr.getyx()
-        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols)
+        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
     stdscr.refresh()
 
@@ -137,7 +134,7 @@ def tail_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
         if stdscr.getch() == curses.KEY_RESIZE:
             term_num_rows, term_num_cols = get_term_dimensions(stdscr)
             stdscr.clear()
-            redraw_screen_backwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+            seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
         draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
 
 def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols):
