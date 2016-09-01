@@ -17,15 +17,28 @@ def load_config(config_filepath):
             regex_to_color[re.compile(regex)] = color
     return regex_to_color
 
-def color_regexes_in_line(stdscr, row_index, line, regex_to_color):
+def increment_cursor(cursor, count, term_num_cols):
+     rows = count / term_num_cols
+     leftover = count % term_num_cols
+     if (cursor[1] + leftover >= term_num_cols):
+         return (cursor[0] + rows + 1, cursor[1] + leftover - term_num_cols)
+     else:
+         return (cursor[0] + rows, cursor[1] + count)
+
+def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols):
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
-        curr_col = 0
+        curr_cursor = prev_cursor
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                stdscr.addstr(row_index, curr_col, token, curses.color_pair(color))
-            curr_col += len(token)
+                stdscr.addstr(token, curses.color_pair(color))
+            curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
+            try:
+                stdscr.move(*curr_cursor)
+            except:
+                pass
+    stdscr.move(*new_cursor)
 
 def read_char_backwards(input_file):
     input_file.seek(-1, os.SEEK_CUR)
@@ -69,26 +82,17 @@ def readline_forwards_with_wrapping(input_file, term_num_cols):
 
 def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
-    for row_index in range(term_num_rows):
-        line = readline_forwards_with_wrapping(input_file, term_num_cols)
+    stdscr.move(0, 0)
+    while stdscr.getyx()[0] < term_num_rows:
+        line = input_file.readline()
         if not line:
             break
-        stdscr.addstr(row_index, 0, line)
-        color_regexes_in_line(stdscr, row_index, line, regex_to_color)
+        prev_cursor = stdscr.getyx()
+        stdscr.addstr(line)
+        new_cursor = stdscr.getyx()
+        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols)
     input_file.seek(current_position)
     stdscr.addstr(term_num_rows, 0, ':')
-    stdscr.refresh()
-
-def redraw_screen_backwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
-    current_position = input_file.tell()
-    for row_index in reversed(range(term_num_rows)):
-        line = readline_backwards_with_wrapping(input_file, term_num_cols)
-        if not line:
-            break
-        stdscr.addstr(row_index, 0, line)
-        color_regexes_in_line(stdscr, row_index, line, regex_to_color)
-    input_file.seek(current_position)
-    stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
     stdscr.refresh()
 
 def seek_backwards(line_count, input_file, term_num_cols):
@@ -111,16 +115,19 @@ def seek_forwards(line_count, input_file, term_num_rows, term_num_cols):
         readline_forwards_with_wrapping(input_file, term_num_cols)
 
 def get_term_dimensions(stdscr):
-    return tuple(n - 1 for n in stdscr.getmaxyx())
+    return (stdscr.getmaxyx()[0] - 1, stdscr.getmaxyx()[1])
 
 def draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     while True:
-        line = readline_forwards_with_wrapping(input_file, term_num_rows)
+        line = input_file.readline()
         if line == '':
             break
         stdscr.scroll(1)
-        stdscr.addstr(term_num_rows - 1, 0, line)
-        color_regexes_in_line(stdscr, term_num_rows - 1, line, regex_to_color)
+        stdscr.move(term_num_rows - 1, 0)
+        prev_cursor = stdscr.getyx()
+        stdscr.addstr(line)
+        new_cursor = stdscr.getyx()
+        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_cols)
     stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
     stdscr.refresh()
 
@@ -140,7 +147,7 @@ def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols
 def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     input_file.seek(0, os.SEEK_END)
     stdscr.clear()
-    redraw_screen_backwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+    seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
     stdscr.nodelay(1)
     curses.curs_set(0)
     try:
