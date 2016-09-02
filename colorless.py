@@ -99,6 +99,8 @@ def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, te
         new_cursor = stdscr.getyx()
         color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     input_file.seek(current_position)
+    stdscr.move(term_num_rows, 0)
+    stdscr.clrtoeol()
     stdscr.addstr(term_num_rows, 0, ':')
     stdscr.refresh()
 
@@ -125,16 +127,9 @@ def get_term_dimensions(stdscr):
     return (stdscr.getmaxyx()[0] - 1, stdscr.getmaxyx()[1])
 
 def draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
-    while True:
-        line = input_file.readline()
-        if line == '':
-            break
-        stdscr.scroll(1)
-        stdscr.move(term_num_rows - 1, 0)
-        prev_cursor = stdscr.getyx()
-        stdscr.addstr(line[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols])
-        new_cursor = stdscr.getyx()
-        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
+    input_file.seek(0, os.SEEK_END)
+    seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
+    redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
     stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
     stdscr.refresh()
 
@@ -145,6 +140,7 @@ def tail_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
             term_num_rows, term_num_cols = get_term_dimensions(stdscr)
             stdscr.clear()
             seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
+            redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
         draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
 
 def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols):
@@ -155,6 +151,7 @@ def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_
     input_file.seek(0, os.SEEK_END)
     stdscr.clear()
     seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
+    redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
     stdscr.nodelay(1)
     curses.curs_set(0)
     try:
