@@ -31,8 +31,8 @@ def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor,
         curr_cursor = prev_cursor
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
-            if token_matches_regex:
-                stdscr.addstr(token, curses.color_pair(color))
+            if token_matches_regex and stdscr.getyx()[0] <= term_num_rows:
+                stdscr.addstr(token[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols], curses.color_pair(color))
             curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
             stdscr.move(*curr_cursor)
     stdscr.move(*new_cursor)
@@ -77,6 +77,16 @@ def readline_forwards_with_wrapping(input_file, term_num_cols):
         return line[:term_num_cols]
     return line
 
+def addstr_max_lines(stdscr, line, max_num_lines, term_num_cols):
+    while max_num_lines > 0:
+        if len(line) > term_num_cols:
+            stdscr.addstr(line[:term_num_cols])
+            line = line[term_num_cols:]
+            max_num_lines -= 1
+        else:
+            stdscr.addstr(line)
+            break
+
 def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
     stdscr.move(0, 0)
@@ -85,7 +95,7 @@ def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, te
         if not line:
             break
         prev_cursor = stdscr.getyx()
-        stdscr.addstr(line)
+        stdscr.addstr(line[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols])
         new_cursor = stdscr.getyx()
         color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     input_file.seek(current_position)
@@ -122,7 +132,7 @@ def draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_row
         stdscr.scroll(1)
         stdscr.move(term_num_rows - 1, 0)
         prev_cursor = stdscr.getyx()
-        stdscr.addstr(line)
+        stdscr.addstr(line[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols])
         new_cursor = stdscr.getyx()
         color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
