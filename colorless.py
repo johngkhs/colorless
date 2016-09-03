@@ -58,6 +58,8 @@ class FileIterator:
         return line
 
     def prev_line(self):
+        if self.at_beginning_of_file():
+            return ''
         line = self.prev_full_line()
         wrapped_num_chars_in_line = len(line)
         while wrapped_num_chars_in_line > self.term_dims.cols:
