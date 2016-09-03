@@ -10,6 +10,8 @@ import time
 import curses.textpad
 import textwrap
 
+SEARCH_HIGHLIGHT_COLOR = 256
+
 class SearchTextbox:
     def __init__(self, screen):
         self.screen = screen
@@ -179,13 +181,10 @@ def redraw_screen(screen, regex_to_color, file_iterator):
 def tail_loop(screen, regex_to_color, file_iterator, term_dims):
     if screen.getch() == curses.KEY_RESIZE:
         term_dims.update(screen)
-        file_iterator.seek_to_one_page_before_end_of_file()
-        redraw_screen(screen, regex_to_color, file_iterator)
     file_iterator.seek_to_one_page_before_end_of_file()
     redraw_screen(screen, regex_to_color, file_iterator)
     screen.addstr(term_dims.rows, 0, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 1])
     screen.refresh()
-    time.sleep(0.1)
 
 def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     screen.nodelay(1)
@@ -193,6 +192,7 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     try:
         while True:
             tail_loop(screen, regex_to_color, file_iterator, term_dims)
+            time.sleep(0.1)
     except KeyboardInterrupt:
         screen.clear()
     screen.nodelay(0)
@@ -203,6 +203,7 @@ def curses_init_colors():
     curses.use_default_colors()
     for color in range(1, curses.COLORS):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
+    curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
 def search_forwards(search_regex, file_iterator):
     current_position = file_iterator.input_file.tell()
@@ -266,6 +267,8 @@ def main(screen, input_file, config_filepath):
             search_textbox = SearchTextbox(screen)
             search_regex = re.compile(search_textbox.edit())
             search_forwards(search_regex, file_iterator)
+            highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
+            regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
             input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
             input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
@@ -273,6 +276,8 @@ def main(screen, input_file, config_filepath):
             search_textbox = SearchTextbox(screen)
             search_regex = re.compile(search_textbox.edit())
             screen.clear()
+            highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
+            regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
             search_backwards(search_regex, file_iterator)
             input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
             input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
