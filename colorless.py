@@ -114,24 +114,6 @@ class FileIterator:
         self.seek_end()
         self.reverse_seek(self.term_dims.rows)
 
-def safe_addstr_row_col(screen, row, col, string):
-    try:
-        screen.addstr(row, col, string)
-    except curses.error:
-        pass
-
-def safe_addstr(screen, string):
-    try:
-        screen.addstr(string)
-    except curses.error:
-        pass
-
-def safe_addstr_color(screen, string, color):
-    try:
-        screen.addstr(string, color)
-    except curses.error:
-        pass
-
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
     if config_filepath:
@@ -142,14 +124,6 @@ def load_config(config_filepath):
             assert 1 <= color <= curses.COLORS, '\'{0}\': {1} is invalid. Color must be in the range [1, {2}].'.format(regex, color, curses.COLORS)
             regex_to_color[re.compile(r'({0})'.format(regex))] = color
     return regex_to_color
-
-def increment_cursor(cursor, count, cols):
-    while True:
-        if cursor[1] + count < cols:
-            return (cursor[0], cursor[1] + count)
-        else:
-            count -= cols
-            cursor = (cursor[0] + 1, cursor[1])
 
 def color_regexes_in_line(line, regex_to_color):
     regex_line = '0' * len(line)
@@ -169,16 +143,13 @@ def wrap(line, n):
 def split_on_identical_adjacent(color_line):
     if not color_line:
         return []
-    split_color_line = []
-    prev_char = color_line[0]
-    prev_i = 0
-    for i, c in enumerate(color_line):
-        if c != prev_char:
-            split_color_line.append(color_line[prev_i:i])
-            prev_i = i
-            prev_char = c
-    split_color_line.append(color_line[prev_i:len(color_line)])
-    return split_color_line
+    identical_adjacents = [color_line[0]]
+    for c in color_line[1:]:
+        if c == identical_adjacents[-1][0]:
+            identical_adjacents[-1] += c
+        else:
+            identical_adjacents.append(c)
+    return identical_adjacents
 
 def redraw_screen(screen, regex_to_color, file_iterator):
     current_position = file_iterator.input_file.tell()
@@ -202,7 +173,7 @@ def redraw_screen(screen, regex_to_color, file_iterator):
             if row >= file_iterator.term_dims.rows:
                 break
     file_iterator.input_file.seek(current_position)
-    safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, ':')
+    screen.addstr(file_iterator.term_dims.rows, 0, ':')
     screen.refresh()
 
 def tail_loop(screen, regex_to_color, file_iterator, term_dims):
@@ -212,7 +183,7 @@ def tail_loop(screen, regex_to_color, file_iterator, term_dims):
         redraw_screen(screen, regex_to_color, file_iterator)
     file_iterator.seek_to_one_page_before_end_of_file()
     redraw_screen(screen, regex_to_color, file_iterator)
-    safe_addstr_row_col(screen, term_dims.rows, 0, 'Waiting for data... (interrupt to abort)')
+    screen.addstr(term_dims.rows, 0, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 1])
     screen.refresh()
     time.sleep(0.1)
 
@@ -291,14 +262,14 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, '/')
+            screen.addstr(file_iterator.term_dims.rows, 0, '/')
             search_textbox = SearchTextbox(screen)
             search_regex = re.compile(search_textbox.edit())
             search_forwards(search_regex, file_iterator)
             input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
             input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
-            safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, '?')
+            screen.addstr(file_iterator.term_dims.rows, 0, '?')
             search_textbox = SearchTextbox(screen)
             search_regex = re.compile(search_textbox.edit())
             screen.clear()
