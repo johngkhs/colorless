@@ -13,8 +13,9 @@ def load_config(config_filepath):
     if config_filepath:
         config = {}
         execfile(config_filepath, config)
+        assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
         for (regex, color) in config['regex_to_color'].items():
-            assert 1 <= color <= curses.COLORS, '\'{0}\': {1} is invalid. Color must be in the range [1, {2}]'.format(regex, color, curses.COLORS)
+            assert 1 <= color <= curses.COLORS, '\'{0}\': {1} is invalid. Color must be in the range [1, {2}].'.format(regex, color, curses.COLORS)
             regex_to_color[re.compile(r'({0})'.format(regex))] = color
     return regex_to_color
 
@@ -27,6 +28,7 @@ def increment_cursor(cursor, count, term_num_cols):
             cursor = (cursor[0] + 1, cursor[1])
 
 def color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols):
+    max_chars = (term_num_rows - screen.getyx()[0]) * term_num_cols
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
         curr_cursor = prev_cursor
@@ -117,7 +119,7 @@ def seek_forwards(line_count, input_file, term_num_rows, term_num_cols):
 def get_term_dimensions(screen):
     return (screen.getmaxyx()[0] - 1, screen.getmaxyx()[1])
 
-def draw_lines_appended_to_file(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
+def draw_last_page(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
     input_file.seek(0, os.SEEK_END)
     seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
     redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
@@ -128,10 +130,9 @@ def tail_loop(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
     while True:
         if screen.getch() == curses.KEY_RESIZE:
             term_num_rows, term_num_cols = get_term_dimensions(screen)
-            screen.clear()
             seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
             redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
-        draw_lines_appended_to_file(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
+        draw_last_page(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
         time.sleep(0.1)
 
 def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols):
@@ -149,10 +150,9 @@ def enter_tail_mode(screen, regex_to_color, input_file, term_num_rows, term_num_
     curses.curs_set(1)
 
 def curses_init_colors():
-    MAX_COLOR = 255
     DEFAULT_BACKGROUND_COLOR = -1
     curses.use_default_colors()
-    for color in range(MAX_COLOR):
+    for color in range(1, curses.COLORS):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
 def main(screen, input_file, config_filepath):
