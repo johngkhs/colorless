@@ -26,17 +26,17 @@ def increment_cursor(cursor, count, term_num_cols):
             count -= term_num_cols
             cursor = (cursor[0] + 1, cursor[1])
 
-def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols):
+def color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols):
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
         curr_cursor = prev_cursor
         for index, token in enumerate(tokens):
-            stdscr.move(*curr_cursor)
+            screen.move(*curr_cursor)
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                stdscr.addstr(token, curses.color_pair(color))
+                screen.addstr(token, curses.color_pair(color))
             curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
-    stdscr.move(*new_cursor)
+    screen.move(*new_cursor)
 
 def read_char_backwards(input_file):
     input_file.seek(-1, os.SEEK_CUR)
@@ -78,22 +78,22 @@ def readline_forwards_with_wrapping(input_file, term_num_cols):
         return line[:term_num_cols]
     return line
 
-def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
+def redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
-    stdscr.move(0, 0)
-    while stdscr.getyx()[0] < term_num_rows:
+    screen.move(0, 0)
+    while screen.getyx()[0] < term_num_rows:
         line = input_file.readline()
         if not line:
             break
-        prev_cursor = stdscr.getyx()
-        stdscr.addstr(line[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols])
-        new_cursor = stdscr.getyx()
-        color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
+        prev_cursor = screen.getyx()
+        screen.addstr(line[:(term_num_rows - screen.getyx()[0]) * term_num_cols])
+        new_cursor = screen.getyx()
+        color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     input_file.seek(current_position)
-    stdscr.move(term_num_rows, 0)
-    stdscr.clrtoeol()
-    stdscr.addstr(term_num_rows, 0, ':')
-    stdscr.refresh()
+    screen.move(term_num_rows, 0)
+    screen.clrtoeol()
+    screen.addstr(term_num_rows, 0, ':')
+    screen.refresh()
 
 def seek_backwards(line_count, input_file, term_num_cols):
     for i in range(line_count):
@@ -114,43 +114,38 @@ def seek_forwards(line_count, input_file, term_num_rows, term_num_cols):
     for i in range(clamped_line_count):
         readline_forwards_with_wrapping(input_file, term_num_cols)
 
-def get_term_dimensions(stdscr):
-    return (stdscr.getmaxyx()[0] - 1, stdscr.getmaxyx()[1])
+def get_term_dimensions(screen):
+    return (screen.getmaxyx()[0] - 1, screen.getmaxyx()[1])
 
-def draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
+def draw_lines_appended_to_file(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
     input_file.seek(0, os.SEEK_END)
     seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
-    redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
-    stdscr.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
-    stdscr.refresh()
+    redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
+    screen.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
+    screen.refresh()
 
-def tail_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
+def tail_loop(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
     while True:
-        time.sleep(0.1)
-        if stdscr.getch() == curses.KEY_RESIZE:
-            term_num_rows, term_num_cols = get_term_dimensions(stdscr)
-            stdscr.clear()
+        if screen.getch() == curses.KEY_RESIZE:
+            term_num_rows, term_num_cols = get_term_dimensions(screen)
+            screen.clear()
             seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
-            redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
-        draw_lines_appended_to_file(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+            redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
+        draw_lines_appended_to_file(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
+        time.sleep(0.1)
 
 def seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols):
     input_file.seek(0, os.SEEK_END)
     seek_backwards(term_num_rows, input_file, term_num_cols)
 
-def enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
-    input_file.seek(0, os.SEEK_END)
-    stdscr.clear()
-    seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
-    redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
-    stdscr.nodelay(1)
+def enter_tail_mode(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
+    screen.nodelay(1)
     curses.curs_set(0)
     try:
-        tail_loop(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+        tail_loop(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
     except KeyboardInterrupt:
         pass
-    stdscr.clear()
-    stdscr.nodelay(0)
+    screen.nodelay(0)
     curses.curs_set(1)
 
 def curses_init_colors():
@@ -160,12 +155,11 @@ def curses_init_colors():
     for color in range(MAX_COLOR):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
-def main(stdscr, input_file, config_filepath):
+def main(screen, input_file, config_filepath):
     curses_init_colors()
     regex_to_color = load_config(config_filepath)
-    term_num_rows, term_num_cols = get_term_dimensions(stdscr)
-    stdscr.scrollok(True)
-    redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+    term_num_rows, term_num_cols = get_term_dimensions(screen)
+    redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
     input_to_action = {ord(key): action for (key, action) in {
         'j' : lambda: seek_forwards(1, input_file, term_num_rows, term_num_cols),
         'k' : lambda: seek_backwards(1, input_file, term_num_cols),
@@ -179,17 +173,17 @@ def main(stdscr, input_file, config_filepath):
     }.items()}
 
     while True:
-        user_input = stdscr.getch()
+        user_input = screen.getch()
         if user_input in input_to_action:
             input_to_action[user_input]()
         elif user_input == curses.KEY_RESIZE:
-            stdscr.clear()
-            term_num_rows, term_num_cols = get_term_dimensions(stdscr)
+            screen.clear()
+            term_num_rows, term_num_cols = get_term_dimensions(screen)
         elif user_input == ord('F'):
-            enter_tail_mode(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
-            term_num_rows, term_num_cols = get_term_dimensions(stdscr)
+            enter_tail_mode(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
+            term_num_rows, term_num_cols = get_term_dimensions(screen)
             seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
-        redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
+        redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
