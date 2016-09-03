@@ -8,6 +8,7 @@ import re
 import sys
 import time
 import curses.textpad
+import textwrap
 
 class SearchTextbox:
     def __init__(self, screen):
@@ -150,34 +151,57 @@ def increment_cursor(cursor, count, cols):
             count -= cols
             cursor = (cursor[0] + 1, cursor[1])
 
-def color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, file_iterator):
+def color_regexes_in_line(line, regex_to_color):
+    regex_line = '0' * len(line)
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
-        curr_cursor = prev_cursor
+        col = 0
         for index, token in enumerate(tokens):
-            screen.move(*curr_cursor)
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                safe_addstr_color(screen, token, curses.color_pair(color))
-            curr_cursor = increment_cursor(curr_cursor, len(token), file_iterator.term_dims.cols)
-            if curr_cursor[0] > file_iterator.term_dims.rows:
-                break
-    screen.move(*new_cursor)
+                 regex_line = regex_line[:col] + str(color) * len(token) + regex_line[col + len(token):]
+            col += len(token)
+    return regex_line
+
+def wrap(line, n):
+     return [line[i:i+n] for i in range(0, len(line), n)]
+
+def split_on_identical_adjacent(color_line):
+    if not color_line:
+        return []
+    split_color_line = []
+    prev_char = color_line[0]
+    prev_i = 0
+    for i, c in enumerate(color_line):
+        if c != prev_char:
+            split_color_line.append(color_line[prev_i:i])
+            prev_i = i
+            prev_char = c
+    split_color_line.append(color_line[prev_i:len(color_line)])
+    return split_color_line
 
 def redraw_screen(screen, regex_to_color, file_iterator):
     current_position = file_iterator.input_file.tell()
     screen.move(0, 0)
-    while screen.getyx()[0] < file_iterator.term_dims.rows:
+    row = 0
+    while row < file_iterator.term_dims.rows:
         line = input_file.readline()
         if not line:
             break
-        prev_cursor = screen.getyx()
-        safe_addstr(screen, line)
-        new_cursor = screen.getyx()
-        color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, file_iterator)
+        color_line = color_regexes_in_line(line, regex_to_color)
+        wrapped_lines = wrap(line, file_iterator.term_dims.cols)
+        wrapped_color_lines = wrap(color_line, file_iterator.term_dims.cols)
+        for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
+            screen.addstr(row, 0, wrapped_line)
+            col = 0
+            for split_color in split_on_identical_adjacent(wrapped_color_line):
+                if split_color[0] != '0':
+                    screen.addstr(row, col, wrapped_line[col:col + len(split_color)], curses.color_pair(int(split_color[0])))
+                col += len(split_color)
+            row += 1
+            if row >= file_iterator.term_dims.rows:
+                break
     file_iterator.input_file.seek(current_position)
-    screen.move(file_iterator.term_dims.rows, 0)
-    screen.clrtoeol()
     safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, ':')
     screen.refresh()
 
@@ -199,7 +223,7 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
         while True:
             tail_loop(screen, regex_to_color, file_iterator, term_dims)
     except KeyboardInterrupt:
-        pass
+        screen.clear()
     screen.nodelay(0)
     curses.curs_set(1)
 
