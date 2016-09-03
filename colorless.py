@@ -8,6 +8,24 @@ import re
 import sys
 import time
 
+def safe_addstr_row_col(screen, row, col, string):
+    try:
+        screen.addstr(row, col, string)
+    except curses.error:
+        pass
+
+def safe_addstr(screen, string):
+    try:
+        screen.addstr(string)
+    except curses.error:
+        pass
+
+def safe_addstr_color(screen, string, color):
+    try:
+        screen.addstr(string, color)
+    except curses.error:
+        pass
+
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
     if config_filepath:
@@ -28,7 +46,6 @@ def increment_cursor(cursor, count, term_num_cols):
             cursor = (cursor[0] + 1, cursor[1])
 
 def color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols):
-    max_chars = (term_num_rows - screen.getyx()[0]) * term_num_cols
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
         curr_cursor = prev_cursor
@@ -36,8 +53,10 @@ def color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor,
             screen.move(*curr_cursor)
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                screen.addstr(token, curses.color_pair(color))
+                safe_addstr_color(screen, token, curses.color_pair(color))
             curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
+            if curr_cursor[0] >= term_num_rows:
+                break
     screen.move(*new_cursor)
 
 def read_char_backwards(input_file):
@@ -88,13 +107,13 @@ def redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_co
         if not line:
             break
         prev_cursor = screen.getyx()
-        screen.addstr(line[:(term_num_rows - screen.getyx()[0]) * term_num_cols])
+        safe_addstr(screen, line)
         new_cursor = screen.getyx()
         color_regexes_in_line(screen, line, regex_to_color, prev_cursor, new_cursor, term_num_rows, term_num_cols)
     input_file.seek(current_position)
     screen.move(term_num_rows, 0)
     screen.clrtoeol()
-    screen.addstr(term_num_rows, 0, ':')
+    safe_addstr_row_col(screen, term_num_rows, 0, ':')
     screen.refresh()
 
 def seek_backwards(line_count, input_file, term_num_cols):
@@ -123,7 +142,7 @@ def draw_last_page(screen, regex_to_color, input_file, term_num_rows, term_num_c
     input_file.seek(0, os.SEEK_END)
     seek_to_one_page_before_end_of_file(input_file, term_num_rows, term_num_cols)
     redraw_screen(screen, regex_to_color, input_file, term_num_rows, term_num_cols)
-    screen.addstr(term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
+    safe_addstr_row_col(screen, term_num_rows, 0, 'Waiting for data... (interrupt to abort)')
     screen.refresh()
 
 def tail_loop(screen, regex_to_color, input_file, term_num_rows, term_num_cols):
