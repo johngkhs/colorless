@@ -14,6 +14,7 @@ def load_config(config_filepath):
         config = {}
         execfile(config_filepath, config)
         for (regex, color) in config['regex_to_color'].items():
+            assert 1 <= color <= curses.COLORS, '\'{0}\': {1} is invalid. Color must be in the range [1, {2}]'.format(regex, color, curses.COLORS)
             regex_to_color[re.compile(r'({0})'.format(regex))] = color
     return regex_to_color
 
@@ -159,8 +160,9 @@ def curses_init_colors():
     for color in range(MAX_COLOR):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
-def main(stdscr, input_file, regex_to_color):
+def main(stdscr, input_file, config_filepath):
     curses_init_colors()
+    regex_to_color = load_config(config_filepath)
     term_num_rows, term_num_cols = get_term_dimensions(stdscr)
     stdscr.scrollok(True)
     redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols)
@@ -194,6 +196,5 @@ if __name__ == '__main__':
     arg_parser.add_argument('-c', '--config', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
     args = arg_parser.parse_args()
-    regex_to_color = load_config(args.config)
     with open(args.filepath, 'r') as input_file:
-        curses.wrapper(main, input_file, regex_to_color)
+        curses.wrapper(main, input_file, args.config)
