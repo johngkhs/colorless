@@ -7,6 +7,23 @@ import os
 import re
 import sys
 import time
+import curses.textpad
+
+class SearchTextbox:
+    def __init__(self, screen):
+        self.screen = screen
+        self.textbox = curses.textpad.Textbox(screen)
+
+    def edit(self):
+        user_input = self.screen.getch()
+        val = ''
+        while self.textbox.do_command(user_input):
+            if user_input == ord('\n'):
+                break
+            val += chr(user_input)
+            user_input = self.screen.getch()
+            self.screen.refresh()
+        return val
 
 class TerminalDimensions:
     def __init__(self, screen):
@@ -25,7 +42,7 @@ class FileIterator:
     def at_beginning_of_file(self):
         return self.input_file.tell() == 0
 
-    def prev_line(self):
+    def prev_full_line(self):
         if self.at_beginning_of_file():
             return
         line = self.prev_char()
@@ -38,7 +55,10 @@ class FileIterator:
                 break
             else:
                 line = char + line
+        return line
 
+    def prev_line(self):
+        line = self.prev_full_line()
         wrapped_num_chars_in_line = len(line)
         while wrapped_num_chars_in_line > self.term_dims.cols:
             wrapped_num_chars_in_line -= self.term_dims.cols
@@ -77,6 +97,10 @@ class FileIterator:
                 return max(0, lines_remaining_in_file - self.term_dims.rows)
         self.input_file.seek(current_position)
         return line_count
+
+    def no_clamp_forward_seek(self, line_count):
+        for i in range(line_count):
+            self.next_line()
 
     def forward_seek(self, line_count):
         clamped_line_count = self.clamp_forward_seekable_line_count(line_count)
@@ -155,27 +179,23 @@ def redraw_screen(screen, regex_to_color, file_iterator):
     safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, ':')
     screen.refresh()
 
-def draw_last_page(screen, regex_to_color, file_iterator):
-    file_iterator.seek_end()
+def tail_loop(screen, regex_to_color, file_iterator, term_dims):
+    if screen.getch() == curses.KEY_RESIZE:
+        term_dims.update(screen)
+        file_iterator.seek_to_one_page_before_end_of_file()
+        redraw_screen(screen, regex_to_color, file_iterator)
     file_iterator.seek_to_one_page_before_end_of_file()
     redraw_screen(screen, regex_to_color, file_iterator)
-    safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, 'Waiting for data... (interrupt to abort)')
+    safe_addstr_row_col(screen, term_dims.rows, 0, 'Waiting for data... (interrupt to abort)')
     screen.refresh()
-
-def tail_loop(screen, regex_to_color, file_iterator, term_dims):
-    while True:
-        if screen.getch() == curses.KEY_RESIZE:
-            term_dims.update(screen)
-            file_iterator.seek_to_one_page_before_end_of_file()
-            redraw_screen(screen, regex_to_color, file_iterator)
-        draw_last_page(screen, regex_to_color, file_iterator)
-        time.sleep(0.1)
+    time.sleep(0.1)
 
 def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     screen.nodelay(1)
     curses.curs_set(0)
     try:
-        tail_loop(screen, regex_to_color, file_iterator, term_dims)
+        while True:
+            tail_loop(screen, regex_to_color, file_iterator, term_dims)
     except KeyboardInterrupt:
         pass
     screen.nodelay(0)
@@ -186,6 +206,34 @@ def curses_init_colors():
     curses.use_default_colors()
     for color in range(1, curses.COLORS):
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
+
+def search_forwards(search_regex, file_iterator):
+    current_position = file_iterator.input_file.tell()
+    line = file_iterator.input_file.readline()
+    while True:
+        line = file_iterator.input_file.readline()
+        if not line:
+            file_iterator.input_file.seek(current_position)
+            return
+        elif search_regex.search(line):
+            file_iterator.prev_full_line()
+            line_count = file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows)
+            if line_count < file_iterator.term_dims.rows:
+                file_iterator.seek_to_one_page_before_end_of_file()
+            return
+
+def search_backwards(search_regex, file_iterator):
+    current_position = file_iterator.input_file.tell()
+    if file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows) == file_iterator.term_dims.rows - 1:
+        file_iterator.no_clamp_forward_seek(file_iterator.term_dims.rows)
+    line = file_iterator.prev_full_line()
+    while True:
+        line = file_iterator.prev_full_line()
+        if not line:
+            file_iterator.input_file.seek(current_position)
+            return
+        elif search_regex.search(line):
+            return
 
 def main(screen, input_file, config_filepath):
     curses_init_colors()
@@ -216,6 +264,21 @@ def main(screen, input_file, config_filepath):
             enter_tail_mode(screen, regex_to_color, file_iterator, term_dims)
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
+        elif user_input == ord('/'):
+            safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, '/')
+            search_textbox = SearchTextbox(screen)
+            search_regex = re.compile(search_textbox.edit())
+            search_forwards(search_regex, file_iterator)
+            input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
+            input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
+        elif user_input == ord('?'):
+            safe_addstr_row_col(screen, file_iterator.term_dims.rows, 0, '?')
+            search_textbox = SearchTextbox(screen)
+            search_regex = re.compile(search_textbox.edit())
+            screen.clear()
+            search_backwards(search_regex, file_iterator)
+            input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
+            input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
         redraw_screen(screen, regex_to_color, file_iterator)
 
 if __name__ == '__main__':
