@@ -14,7 +14,7 @@ def load_config(config_filepath):
         config = {}
         execfile(config_filepath, config)
         for (regex, color) in config['regex_to_color'].items():
-            regex_to_color[re.compile(regex)] = color
+            regex_to_color[re.compile(r'({0})'.format(regex))] = color
     return regex_to_color
 
 def increment_cursor(cursor, count, term_num_cols):
@@ -30,11 +30,11 @@ def color_regexes_in_line(stdscr, line, regex_to_color, prev_cursor, new_cursor,
         tokens = regex.split(line)
         curr_cursor = prev_cursor
         for index, token in enumerate(tokens):
-            token_matches_regex = (index % 2 == 1)
-            if token_matches_regex and stdscr.getyx()[0] <= term_num_rows:
-                stdscr.addstr(token[:(term_num_rows - stdscr.getyx()[0]) * term_num_cols], curses.color_pair(color))
-            curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
             stdscr.move(*curr_cursor)
+            token_matches_regex = (index % 2 == 1)
+            if token_matches_regex:
+                stdscr.addstr(token, curses.color_pair(color))
+            curr_cursor = increment_cursor(curr_cursor, len(token), term_num_cols)
     stdscr.move(*new_cursor)
 
 def read_char_backwards(input_file):
@@ -76,16 +76,6 @@ def readline_forwards_with_wrapping(input_file, term_num_cols):
         input_file.seek(term_num_cols - len(line), os.SEEK_CUR)
         return line[:term_num_cols]
     return line
-
-def addstr_max_lines(stdscr, line, max_num_lines, term_num_cols):
-    while max_num_lines > 0:
-        if len(line) > term_num_cols:
-            stdscr.addstr(line[:term_num_cols])
-            line = line[term_num_cols:]
-            max_num_lines -= 1
-        else:
-            stdscr.addstr(line)
-            break
 
 def redraw_screen_forwards(stdscr, regex_to_color, input_file, term_num_rows, term_num_cols):
     current_position = input_file.tell()
