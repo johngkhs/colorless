@@ -12,21 +12,24 @@ import textwrap
 
 SEARCH_HIGHLIGHT_COLOR = 256
 
-class SearchTextbox:
-    def __init__(self, screen):
-        self.screen = screen
-        self.textbox = curses.textpad.Textbox(screen)
-
-    def edit(self):
-        user_input = self.screen.getch()
-        val = ''
-        while self.textbox.do_command(user_input):
+def get_regex_input(screen, term_dims):
+    regex = ''
+    screen.addstr(term_dims.rows, 0, '/')
+    try:
+        while True:
+            user_input = screen.getch()
             if user_input == ord('\n'):
                 break
-            val += chr(user_input)
-            user_input = self.screen.getch()
-            self.screen.refresh()
-        return val
+            elif user_input == curses.KEY_BACKSPACE or user_input == 127:
+                regex = regex[:-1]
+            else:
+                regex += chr(user_input)
+            screen.move(term_dims.rows, 0)
+            screen.clrtoeol()
+            screen.addstr(term_dims.rows, 0, '/{0}'.format(regex)[:term_dims.cols - 1])
+    except KeyboardInterrupt:
+        return None
+    return regex
 
 class TerminalDimensions:
     def __init__(self, screen):
@@ -264,8 +267,7 @@ def main(screen, input_file, config_filepath):
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
             screen.addstr(file_iterator.term_dims.rows, 0, '/')
-            search_textbox = SearchTextbox(screen)
-            search_regex = re.compile(search_textbox.edit())
+            search_regex = re.compile(get_regex_input(screen, term_dims))
             search_forwards(search_regex, file_iterator)
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
             regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
@@ -273,8 +275,7 @@ def main(screen, input_file, config_filepath):
             input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
             screen.addstr(file_iterator.term_dims.rows, 0, '?')
-            search_textbox = SearchTextbox(screen)
-            search_regex = re.compile(search_textbox.edit())
+            search_regex = re.compile(get_regex_input(screen, term_dims))
             screen.clear()
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
             regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
