@@ -119,6 +119,27 @@ class FileIterator:
         self.seek_end()
         self.reverse_seek(self.term_dims.rows)
 
+    def read_full_lines_backwards(self):
+        CHUNK_SIZE = 2048
+        while True:
+            lines = []
+            if self.input_file.tell() == 0:
+                raise StopIteration
+            chunk_size = min(CHUNK_SIZE, self.input_file.tell())
+            self.input_file.seek(-chunk_size, os.SEEK_CUR)
+            chunk = self.input_file.read(chunk_size)
+            lines = chunk.split('\n')
+            if len(lines) == 1:
+                self.input_file.seek(-(len(lines[0])), os.SEEK_CUR)
+                assert self.input_file.tell() == 0, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
+                yield lines[0]
+                raise StopIteration
+            assert len(lines) > 1, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
+            for line in reversed(lines[1:]):
+                self.input_file.seek(-(len(line) + 1), os.SEEK_CUR)
+                if line != '':
+                    yield line
+
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
     if config_filepath:
@@ -223,8 +244,7 @@ def search_backwards(search_regex, file_iterator):
     if file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows) == file_iterator.term_dims.rows - 1:
         file_iterator.no_clamp_forward_seek(file_iterator.term_dims.rows)
     line = file_iterator.prev_full_line()
-    while True:
-        line = file_iterator.prev_full_line()
+    for line in file_iterator.read_full_lines_backwards():
         if not line:
             file_iterator.input_file.seek(current_position)
             return
