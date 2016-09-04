@@ -10,7 +10,7 @@ import time
 import curses.textpad
 import textwrap
 
-SEARCH_HIGHLIGHT_COLOR = 256
+SEARCH_HIGHLIGHT_COLOR = 255
 
 def get_regex_input(screen, term_dims):
     regex = ''
@@ -126,19 +126,21 @@ def load_config(config_filepath):
         execfile(config_filepath, config)
         assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
         for (regex, color) in config['regex_to_color'].items():
-            assert 1 <= color <= curses.COLORS, '\'{0}\': {1} is invalid. Color must be in the range [1, {2}].'.format(regex, color, curses.COLORS)
+            assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
             regex_to_color[re.compile(r'({0})'.format(regex))] = color
+            DEFAULT_BACKGROUND_COLOR = -1
+            curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
     return regex_to_color
 
 def color_regexes_in_line(line, regex_to_color):
-    regex_line = '0' * len(line)
+    regex_line = '\0' * len(line)
     for regex, color in regex_to_color.items():
         tokens = regex.split(line)
         col = 0
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                 regex_line = regex_line[:col] + str(color) * len(token) + regex_line[col + len(token):]
+                 regex_line = regex_line[:col] + chr(color) * len(token) + regex_line[col + len(token):]
             col += len(token)
     return regex_line
 
@@ -172,7 +174,7 @@ def redraw_screen(screen, regex_to_color, file_iterator):
             col = 0
             for split_color in split_on_identical_adjacent(wrapped_color_line):
                 if split_color[0] != '0':
-                    screen.addstr(row, col, wrapped_line[col:col + len(split_color)], curses.color_pair(int(split_color[0])))
+                    screen.addstr(row, col, wrapped_line[col:col + len(split_color)], curses.color_pair(ord(split_color[0])))
                 col += len(split_color)
             row += 1
             if row >= file_iterator.term_dims.rows:
@@ -200,13 +202,6 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
         screen.clear()
     screen.nodelay(0)
     curses.curs_set(1)
-
-def curses_init_colors():
-    DEFAULT_BACKGROUND_COLOR = -1
-    curses.use_default_colors()
-    for color in range(1, curses.COLORS):
-        curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
-    curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
 def search_forwards(search_regex, file_iterator):
     current_position = file_iterator.input_file.tell()
@@ -237,8 +232,9 @@ def search_backwards(search_regex, file_iterator):
             return
 
 def main(screen, input_file, config_filepath):
-    curses_init_colors()
+    curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
+    curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
     redraw_screen(screen, regex_to_color, file_iterator)
@@ -254,6 +250,7 @@ def main(screen, input_file, config_filepath):
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
+    highlight_regex = ''
     while True:
         user_input = screen.getch()
         if user_input in input_to_action:
@@ -266,6 +263,7 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
+            regex_to_color.pop(highlight_regex, None)
             screen.addstr(file_iterator.term_dims.rows, 0, '/')
             search_regex = re.compile(get_regex_input(screen, term_dims))
             search_forwards(search_regex, file_iterator)
@@ -274,6 +272,7 @@ def main(screen, input_file, config_filepath):
             input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
             input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
+            regex_to_color.pop(highlight_regex, None)
             screen.addstr(file_iterator.term_dims.rows, 0, '?')
             search_regex = re.compile(get_regex_input(screen, term_dims))
             screen.clear()
