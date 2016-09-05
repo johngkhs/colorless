@@ -44,46 +44,12 @@ class FileIterator:
         self.input_file = input_file
         self.term_dims = term_dims
 
-    def at_beginning_of_file(self):
-        return self.input_file.tell() == 0
-
-    def prev_full_line(self):
-        if self.at_beginning_of_file():
-            return
-        line = self.prev_char()
-        while True:
-            if self.at_beginning_of_file():
-                break
-            char = self.prev_char()
-            if char == '\n':
-                self.input_file.seek(1, os.SEEK_CUR)
-                break
-            else:
-                line = char + line
-        return line
-
-    def prev_line(self):
-        if self.at_beginning_of_file():
-            return ''
-        line = self.prev_full_line()
-        wrapped_num_chars_in_line = len(line)
-        while wrapped_num_chars_in_line > self.term_dims.cols:
-            wrapped_num_chars_in_line -= self.term_dims.cols
-        self.input_file.seek(len(line) - wrapped_num_chars_in_line, os.SEEK_CUR)
-        return line
-
     def next_line(self):
         line = self.input_file.readline()
         if len(line) > self.term_dims.cols:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
             return line[:self.term_dims.cols]
         return line
-
-    def prev_char(self):
-        self.input_file.seek(-1, os.SEEK_CUR)
-        char = self.input_file.read(1)
-        self.input_file.seek(-1, os.SEEK_CUR)
-        return char
 
     def seek_start(self):
         self.input_file.seek(0, os.SEEK_SET)
@@ -130,7 +96,8 @@ class FileIterator:
         while True:
             lines = []
             if self.input_file.tell() == 0:
-                raise StopIteration
+                yield ''
+                return
             chunk_size = min(CHUNK_SIZE, self.input_file.tell())
             self.input_file.seek(-chunk_size, os.SEEK_CUR)
             chunk = self.input_file.read(chunk_size)
@@ -139,7 +106,8 @@ class FileIterator:
                 self.input_file.seek(-(len(lines[0])), os.SEEK_CUR)
                 assert self.input_file.tell() == 0, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
                 yield lines[0]
-                raise StopIteration
+                yield ''
+                return
             assert len(lines) > 1, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
             for line in reversed(lines[1:]):
                 self.input_file.seek(-len(line), os.SEEK_CUR)
@@ -238,7 +206,8 @@ def search_forwards(search_regex, file_iterator):
             file_iterator.input_file.seek(current_position)
             return
         elif search_regex.search(line):
-            file_iterator.prev_full_line()
+            for line in file_iterator.read_full_lines_backwards():
+                break
             line_count = file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows)
             if line_count < file_iterator.term_dims.rows:
                 file_iterator.seek_to_one_page_before_end_of_file()
@@ -248,7 +217,6 @@ def search_backwards(search_regex, file_iterator):
     current_position = file_iterator.input_file.tell()
     if file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows) == file_iterator.term_dims.rows - 1:
         file_iterator.no_clamp_forward_seek(file_iterator.term_dims.rows)
-    line = file_iterator.prev_full_line()
     for line in file_iterator.read_full_lines_backwards():
         if not line:
             file_iterator.input_file.seek(current_position)
