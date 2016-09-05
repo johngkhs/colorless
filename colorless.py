@@ -7,7 +7,6 @@ import os
 import re
 import sys
 import time
-import curses.textpad
 import textwrap
 
 SEARCH_HIGHLIGHT_COLOR = 255
@@ -93,8 +92,15 @@ class FileIterator:
         self.input_file.seek(0, os.SEEK_END)
 
     def reverse_seek(self, line_count):
-        for i in range(line_count):
-            self.prev_line()
+        for line in self.read_full_lines_backwards():
+            wrapped_lines = wrap(line, self.term_dims.cols)
+            wrapped_lines.reverse()
+            for i, wrapped_line in enumerate(wrapped_lines):
+                line_count -= 1
+                if line_count == 0:
+                    for remaining_wrapped_line in wrapped_lines[i + 1:]:
+                        self.input_file.seek(len(remaining_wrapped_line), os.SEEK_CUR)
+                    return
 
     def clamp_forward_seekable_line_count(self, line_count):
         current_position = self.input_file.tell()
@@ -128,7 +134,7 @@ class FileIterator:
             chunk_size = min(CHUNK_SIZE, self.input_file.tell())
             self.input_file.seek(-chunk_size, os.SEEK_CUR)
             chunk = self.input_file.read(chunk_size)
-            lines = chunk.split('\n')
+            lines = chunk.splitlines(True)
             if len(lines) == 1:
                 self.input_file.seek(-(len(lines[0])), os.SEEK_CUR)
                 assert self.input_file.tell() == 0, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
@@ -136,9 +142,8 @@ class FileIterator:
                 raise StopIteration
             assert len(lines) > 1, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
             for line in reversed(lines[1:]):
-                self.input_file.seek(-(len(line) + 1), os.SEEK_CUR)
-                if line != '':
-                    yield line
+                self.input_file.seek(-len(line), os.SEEK_CUR)
+                yield line
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
