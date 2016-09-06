@@ -7,7 +7,6 @@ import os
 import re
 import sys
 import time
-import textwrap
 
 SEARCH_HIGHLIGHT_COLOR = 255
 
@@ -70,9 +69,6 @@ class FileIterator:
     def seek_next_wrapped_lines(self, count):
         for i in range(count):
             self.seek_next_wrapped_line()
-        position = self.input_file.tell()
-        self.seek_to_one_page_before_end_of_file()
-        self.input_file.seek(min(position, input_file.tell()))
 
     def seek_prev_wrapped_lines(self, count):
         for i in range(count):
@@ -81,6 +77,15 @@ class FileIterator:
     def seek_to_one_page_before_end_of_file(self):
         self.seek_to_end_of_file()
         self.seek_prev_wrapped_lines(self.term_dims.rows)
+
+    def clamp_position_to_one_page_before_end_of_file(self):
+        position = self.input_file.tell()
+        self.seek_to_one_page_before_end_of_file()
+        self.input_file.seek(min(position, input_file.tell()))
+
+    def seek_next_wrapped_lines_and_clamp_position(self, count):
+        self.seek_next_wrapped_lines(count)
+        self.clamp_position_to_one_page_before_end_of_file()
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
@@ -176,7 +181,7 @@ def search_forwards(search_regex, file_iterator):
             return
         elif search_regex.search(line):
             next(file_iterator.prev_line())
-            file_iterator.seek_next_wrapped_lines(0)
+            file_iterator.clamp_position_to_one_page_before_end_of_file()
             return
 
 def search_backwards(search_regex, file_iterator):
@@ -196,11 +201,11 @@ def main(screen, input_file, config_filepath):
     file_iterator = FileIterator(input_file, term_dims)
     redraw_screen(screen, regex_to_color, file_iterator)
     input_to_action = {ord(key): action for (key, action) in {
-        'j' : lambda: file_iterator.seek_next_wrapped_lines(1),
+        'j' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(1),
         'k' : lambda: file_iterator.seek_prev_wrapped_lines(1),
-        'd' : lambda: file_iterator.seek_next_wrapped_lines(term_dims.rows / 2),
+        'd' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(term_dims.rows / 2),
         'u' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows / 2),
-        'f' : lambda: file_iterator.seek_next_wrapped_lines(term_dims.rows),
+        'f' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(term_dims.rows),
         'b' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows),
         'g' : lambda: file_iterator.seek_to_start_of_file(),
         'G' : lambda: file_iterator.seek_to_one_page_before_end_of_file(),
