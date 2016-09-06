@@ -11,25 +11,6 @@ import textwrap
 
 SEARCH_HIGHLIGHT_COLOR = 255
 
-def get_regex_input(screen, term_dims):
-    regex = ''
-    screen.addstr(term_dims.rows, 0, '/')
-    try:
-        while True:
-            user_input = screen.getch()
-            if user_input == ord('\n'):
-                break
-            elif user_input == curses.KEY_BACKSPACE or user_input == 127:
-                regex = regex[:-1]
-            else:
-                regex += chr(user_input)
-            screen.move(term_dims.rows, 0)
-            screen.clrtoeol()
-            screen.addstr(term_dims.rows, 0, '/{0}'.format(regex)[:term_dims.cols - 1])
-    except KeyboardInterrupt:
-        return None
-    return regex
-
 class TerminalDimensions:
     def __init__(self, screen):
         self.update(screen)
@@ -241,7 +222,10 @@ def main(screen, input_file, config_filepath):
         elif user_input == ord('/'):
             regex_to_color.pop(highlight_regex, None)
             screen.addstr(term_dims.rows, 0, '/')
-            search_regex = re.compile(get_regex_input(screen, term_dims))
+            curses.echo()
+            search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
+            curses.noecho()
+            screen.clear()
             search_forwards(search_regex, file_iterator)
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
             regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
@@ -250,7 +234,9 @@ def main(screen, input_file, config_filepath):
         elif user_input == ord('?'):
             regex_to_color.pop(highlight_regex, None)
             screen.addstr(term_dims.rows, 0, '?')
-            search_regex = re.compile(get_regex_input(screen, term_dims))
+            curses.echo()
+            search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
+            curses.noecho()
             screen.clear()
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
             regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
