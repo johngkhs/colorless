@@ -44,60 +44,13 @@ class FileIterator:
         self.input_file = input_file
         self.term_dims = term_dims
 
-    def next_line(self):
-        line = self.input_file.readline()
-        if len(line) > self.term_dims.cols:
-            self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
-            return line[:self.term_dims.cols]
-        return line
-
-    def seek_start(self):
-        self.input_file.seek(0, os.SEEK_SET)
-
-    def seek_end(self):
-        self.input_file.seek(0, os.SEEK_END)
-
-    def reverse_seek(self, line_count):
-        for line in self.read_full_lines_backwards():
-            wrapped_lines = wrap(line, self.term_dims.cols)
-            wrapped_lines.reverse()
-            for i, wrapped_line in enumerate(wrapped_lines):
-                line_count -= 1
-                if line_count == 0:
-                    for remaining_wrapped_line in wrapped_lines[i + 1:]:
-                        self.input_file.seek(len(remaining_wrapped_line), os.SEEK_CUR)
-                    return
-
-    def clamp_forward_seekable_line_count(self, line_count):
-        current_position = self.input_file.tell()
-        END_OF_FILE = ''
-        for lines_remaining_in_file in range(self.term_dims.rows + line_count):
-            if self.next_line() == END_OF_FILE:
-                self.input_file.seek(current_position)
-                return max(0, lines_remaining_in_file - self.term_dims.rows)
-        self.input_file.seek(current_position)
-        return line_count
-
-    def no_clamp_forward_seek(self, line_count):
-        for i in range(line_count):
-            self.next_line()
-
-    def forward_seek(self, line_count):
-        clamped_line_count = self.clamp_forward_seekable_line_count(line_count)
-        for i in range(clamped_line_count):
-            self.next_line()
-
-    def seek_to_one_page_before_end_of_file(self):
-        self.seek_end()
-        self.reverse_seek(self.term_dims.rows)
-
-    def read_full_lines_backwards(self):
+    def prev_line(self):
+        if self.input_file.tell() == 0:
+            yield ''
+            return
         CHUNK_SIZE = 2048
         while True:
             lines = []
-            if self.input_file.tell() == 0:
-                yield ''
-                return
             chunk_size = min(CHUNK_SIZE, self.input_file.tell())
             self.input_file.seek(-chunk_size, os.SEEK_CUR)
             chunk = self.input_file.read(chunk_size)
@@ -112,6 +65,41 @@ class FileIterator:
             for line in reversed(lines[1:]):
                 self.input_file.seek(-len(line), os.SEEK_CUR)
                 yield line
+
+    def next_line(self):
+        return self.input_file.readline()
+
+    def seek_to_start_of_file(self):
+        self.input_file.seek(0, os.SEEK_SET)
+
+    def seek_to_end_of_file(self):
+        self.input_file.seek(0, os.SEEK_END)
+
+    def seek_next_wrapped_line(self):
+        line = self.next_line()
+        if len(line) > self.term_dims.cols:
+            self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
+
+    def seek_prev_wrapped_line(self):
+        line = next(self.prev_line())
+        wrapped_lines = wrap(line, self.term_dims.cols)
+        for wrapped_line in wrapped_lines[:-1]:
+            self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
+
+    def seek_next_wrapped_lines(self, count):
+        for i in range(count):
+            self.seek_next_wrapped_line()
+        position = self.input_file.tell()
+        self.seek_to_one_page_before_end_of_file()
+        self.input_file.seek(min(position, input_file.tell()))
+
+    def seek_prev_wrapped_lines(self, count):
+        for i in range(count):
+            self.seek_prev_wrapped_line()
+
+    def seek_to_one_page_before_end_of_file(self):
+        self.seek_to_end_of_file()
+        self.seek_prev_wrapped_lines(self.term_dims.rows)
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
@@ -153,11 +141,11 @@ def split_on_identical_adjacent(color_line):
     return identical_adjacents
 
 def redraw_screen(screen, regex_to_color, file_iterator):
-    current_position = file_iterator.input_file.tell()
+    position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
     while row < file_iterator.term_dims.rows:
-        line = input_file.readline()
+        line = file_iterator.next_line()
         if not line:
             break
         color_line = color_regexes_in_line(line, regex_to_color)
@@ -173,7 +161,7 @@ def redraw_screen(screen, regex_to_color, file_iterator):
             row += 1
             if row >= file_iterator.term_dims.rows:
                 break
-    file_iterator.input_file.seek(current_position)
+    file_iterator.input_file.seek(position)
     screen.addstr(file_iterator.term_dims.rows, 0, ':')
     screen.refresh()
 
@@ -198,28 +186,23 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     curses.curs_set(1)
 
 def search_forwards(search_regex, file_iterator):
-    current_position = file_iterator.input_file.tell()
-    line = file_iterator.input_file.readline()
+    position = file_iterator.input_file.tell()
+    line = file_iterator.next_line()
     while True:
-        line = file_iterator.input_file.readline()
+        line = file_iterator.next_line()
         if not line:
-            file_iterator.input_file.seek(current_position)
+            file_iterator.input_file.seek(position)
             return
         elif search_regex.search(line):
-            for line in file_iterator.read_full_lines_backwards():
-                break
-            line_count = file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows)
-            if line_count < file_iterator.term_dims.rows:
-                file_iterator.seek_to_one_page_before_end_of_file()
+            next(file_iterator.prev_line())
+            file_iterator.seek_next_wrapped_lines(0)
             return
 
 def search_backwards(search_regex, file_iterator):
-    current_position = file_iterator.input_file.tell()
-    if file_iterator.clamp_forward_seekable_line_count(file_iterator.term_dims.rows) == file_iterator.term_dims.rows - 1:
-        file_iterator.no_clamp_forward_seek(file_iterator.term_dims.rows)
-    for line in file_iterator.read_full_lines_backwards():
+    position = file_iterator.input_file.tell()
+    for line in file_iterator.prev_line():
         if not line:
-            file_iterator.input_file.seek(current_position)
+            file_iterator.input_file.seek(position)
             return
         elif search_regex.search(line):
             return
@@ -232,13 +215,13 @@ def main(screen, input_file, config_filepath):
     file_iterator = FileIterator(input_file, term_dims)
     redraw_screen(screen, regex_to_color, file_iterator)
     input_to_action = {ord(key): action for (key, action) in {
-        'j' : lambda: file_iterator.forward_seek(1),
-        'k' : lambda: file_iterator.reverse_seek(1),
-        'd' : lambda: file_iterator.forward_seek(term_dims.rows / 2),
-        'u' : lambda: file_iterator.reverse_seek(term_dims.rows / 2),
-        'f' : lambda: file_iterator.forward_seek(term_dims.rows),
-        'b' : lambda: file_iterator.reverse_seek(term_dims.rows),
-        'g' : lambda: file_iterator.seek_start(),
+        'j' : lambda: file_iterator.seek_next_wrapped_lines(1),
+        'k' : lambda: file_iterator.seek_prev_wrapped_lines(1),
+        'd' : lambda: file_iterator.seek_next_wrapped_lines(term_dims.rows / 2),
+        'u' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows / 2),
+        'f' : lambda: file_iterator.seek_next_wrapped_lines(term_dims.rows),
+        'b' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows),
+        'g' : lambda: file_iterator.seek_to_start_of_file(),
         'G' : lambda: file_iterator.seek_to_one_page_before_end_of_file(),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
@@ -257,7 +240,7 @@ def main(screen, input_file, config_filepath):
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
             regex_to_color.pop(highlight_regex, None)
-            screen.addstr(file_iterator.term_dims.rows, 0, '/')
+            screen.addstr(term_dims.rows, 0, '/')
             search_regex = re.compile(get_regex_input(screen, term_dims))
             search_forwards(search_regex, file_iterator)
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
@@ -266,7 +249,7 @@ def main(screen, input_file, config_filepath):
             input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
             regex_to_color.pop(highlight_regex, None)
-            screen.addstr(file_iterator.term_dims.rows, 0, '?')
+            screen.addstr(term_dims.rows, 0, '?')
             search_regex = re.compile(get_regex_input(screen, term_dims))
             screen.clear()
             highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
