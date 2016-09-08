@@ -171,6 +171,25 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     screen.nodelay(0)
     curses.curs_set(1)
 
+def enter_search_mode(screen, regex_to_color, term_dims, search_char):
+    for regex, color in regex_to_color.items():
+        if color == SEARCH_HIGHLIGHT_COLOR:
+            del regex_to_color[regex]
+            break
+    screen.addstr(term_dims.rows, 0, search_char)
+    curses.echo()
+    try:
+        search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
+    except KeyboardInterrupt:
+        curses.noecho()
+        screen.clear()
+        return None
+    curses.noecho()
+    screen.clear()
+    highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
+    regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
+    return search_regex
+
 def search_forwards(search_regex, file_iterator):
     position = file_iterator.input_file.tell()
     line = file_iterator.next_line()
@@ -225,29 +244,17 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            regex_to_color.pop(highlight_regex, None)
-            screen.addstr(term_dims.rows, 0, '/')
-            curses.echo()
-            search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
-            curses.noecho()
-            screen.clear()
-            search_forwards(search_regex, file_iterator)
-            highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
-            regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
-            input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
-            input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
+            search_regex = enter_search_mode(screen, regex_to_color, term_dims, '/')
+            if search_regex:
+                search_forwards(search_regex, file_iterator)
+                input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
+                input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
         elif user_input == ord('?'):
-            regex_to_color.pop(highlight_regex, None)
-            screen.addstr(term_dims.rows, 0, '?')
-            curses.echo()
-            search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
-            curses.noecho()
-            screen.clear()
-            highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
-            regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
-            search_backwards(search_regex, file_iterator)
-            input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
-            input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
+            search_regex = enter_search_mode(screen, regex_to_color, term_dims, '?')
+            if search_regex:
+                search_backwards(search_regex, file_iterator)
+                input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
+                input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
         redraw_screen(screen, regex_to_color, file_iterator)
 
 if __name__ == '__main__':
