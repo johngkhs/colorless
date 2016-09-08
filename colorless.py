@@ -218,7 +218,6 @@ def main(screen, input_file, config_filepath):
     curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
-    redraw_screen(screen, regex_to_color, file_iterator)
     input_to_action = {ord(key): action for (key, action) in {
         'j' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(1),
         'k' : lambda: file_iterator.seek_prev_wrapped_lines(1),
@@ -233,6 +232,7 @@ def main(screen, input_file, config_filepath):
 
     highlight_regex = ''
     while True:
+        redraw_screen(screen, regex_to_color, file_iterator)
         user_input = screen.getch()
         if user_input in input_to_action:
             input_to_action[user_input]()
@@ -255,7 +255,6 @@ def main(screen, input_file, config_filepath):
                 search_backwards(search_regex, file_iterator)
                 input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
                 input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
-        redraw_screen(screen, regex_to_color, file_iterator)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
