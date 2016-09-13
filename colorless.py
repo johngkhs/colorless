@@ -10,21 +10,21 @@ import time
 
 SEARCH_HIGHLIGHT_COLOR = 255
 
-class HistoryFile:
+class SearchHistoryFile:
     def __init__(self):
         self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_history')
 
     def load_search_queries(self):
-        with open(self.filepath, 'a+') as history_file:
-            history_file.seek(0)
-            return history_file.readlines()
+        with open(self.filepath, 'a+') as search_history_file:
+            search_history_file.seek(0)
+            return [line.rstrip('\n') for line in search_history_file.readlines()]
 
     def write_search_query(self, search_query):
         search_queries = self.load_search_queries()
-        with open(self.filepath, 'w') as history_file:
+        with open(self.filepath, 'w') as search_history_file:
             MAX_HISTORY_LINES = 50
-            history_file.write(search_query + '\n')
-            history_file.writelines(search_queries[:MAX_HISTORY_LINES - 1])
+            search_history_file.write(search_query + '\n')
+            search_history_file.writelines(s + '\n' for s in search_queries[:MAX_HISTORY_LINES - 1])
 
 class TerminalDimensions:
     def __init__(self, screen):
@@ -179,7 +179,33 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     screen.nodelay(0)
     curses.curs_set(1)
 
-def enter_search_mode(screen, regex_to_color, term_dims, search_char):
+def get_search_query_input(screen, term_dims, search_queries):
+    search_query = ''
+    search_queries_index = 0
+    while True:
+        user_input = screen.getch()
+        if user_input == curses.KEY_BACKSPACE or user_input == 127:
+            search_query = search_query[:-1]
+        elif user_input == curses.KEY_UP:
+            if search_queries_index < len(search_queries):
+                search_query = search_queries[search_queries_index]
+                search_queries_index += 1
+        elif user_input == curses.KEY_DOWN:
+            if search_queries_index > 0:
+                search_queries_index -= 1
+                search_query = search_queries[search_queries_index]
+        elif 0 <= user_input <= 255:
+            if chr(user_input) == '\n':
+                break
+            else:
+                search_query += chr(user_input)
+        screen.move(term_dims.rows, 1)
+        screen.clrtoeol()
+        screen.addstr(term_dims.rows, 1, search_query)
+        screen.refresh()
+    return search_query
+
+def enter_search_mode(screen, regex_to_color, term_dims, search_queries, search_char):
     for regex, color in regex_to_color.items():
         if color == SEARCH_HIGHLIGHT_COLOR:
             del regex_to_color[regex]
@@ -187,7 +213,7 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_char):
     screen.addstr(term_dims.rows, 0, search_char)
     curses.echo()
     try:
-        search_query = screen.getstr(term_dims.rows, 1, term_dims.cols)
+        search_query = get_search_query_input(screen, term_dims, search_queries)
     except KeyboardInterrupt:
         curses.noecho()
         screen.clear()
@@ -196,6 +222,7 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_char):
     screen.clear()
     highlight_regex = r'({0})'.format(search_query)
     regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
+    search_queries.insert(0, search_query)
     return search_query
 
 def search_forwards(search_query, file_iterator):
@@ -223,7 +250,7 @@ def search_backwards(search_query, file_iterator):
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
-    history_file = HistoryFile()
+    search_history_file = SearchHistoryFile()
     curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
@@ -240,7 +267,7 @@ def main(screen, input_file, config_filepath):
     }.items()}
 
     highlight_regex = ''
-    search_queries = history_file.load_search_queries()
+    search_queries = search_history_file.load_search_queries()
     while True:
         redraw_screen(screen, regex_to_color, file_iterator)
         user_input = screen.getch()
@@ -254,19 +281,19 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            search_query = enter_search_mode(screen, regex_to_color, term_dims, '/')
+            search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '/')
             if search_query:
                 search_forwards(search_query, file_iterator)
                 input_to_action[ord('n')] = lambda: search_forwards(search_query, file_iterator)
                 input_to_action[ord('N')] = lambda: search_backwards(search_query, file_iterator)
-                history_file.write_search_query(search_query)
+                search_history_file.write_search_query(search_query)
         elif user_input == ord('?'):
-            search_query = enter_search_mode(screen, regex_to_color, term_dims, '?')
+            search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
             if search_query:
                 search_backwards(search_query, file_iterator)
                 input_to_action[ord('n')] = lambda: search_backwards(search_query, file_iterator)
                 input_to_action[ord('N')] = lambda: search_forwards(search_query, file_iterator)
-                history_file.write_search_query(search_query)
+                search_history_file.write_search_query(search_query)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
