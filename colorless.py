@@ -40,7 +40,7 @@ class FileIterator:
         self.input_file = input_file
         self.term_dims = term_dims
 
-    def prev_line(self):
+    def prev_line_iterator(self):
         if self.input_file.tell() == 0:
             yield ''
             return
@@ -77,7 +77,7 @@ class FileIterator:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
     def seek_prev_wrapped_line(self):
-        line = next(self.prev_line())
+        line = next(self.prev_line_iterator())
         wrapped_lines = wrap(line, self.term_dims.cols)
         for wrapped_line in wrapped_lines[:-1]:
             self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
@@ -102,6 +102,29 @@ class FileIterator:
     def seek_next_wrapped_lines_and_clamp_position(self, count):
         self.seek_next_wrapped_lines(count)
         self.clamp_position_to_one_page_before_end_of_file()
+
+
+    def search_forwards(self, search_query):
+        position = self.input_file.tell()
+        line = self.next_line()
+        while True:
+            line = self.next_line()
+            if not line:
+                self.input_file.seek(position)
+                return
+            elif re.search(search_query, line):
+                next(self.prev_line_iterator())
+                self.clamp_position_to_one_page_before_end_of_file()
+                return
+
+    def search_backwards(self, search_query):
+        position = self.input_file.tell()
+        for line in self.prev_line_iterator():
+            if not line:
+                self.input_file.seek(position)
+                return
+            elif re.search(search_query, line):
+                return
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
@@ -225,28 +248,6 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_queries, search_
     search_queries.insert(0, search_query)
     return search_query
 
-def search_forwards(search_query, file_iterator):
-    position = file_iterator.input_file.tell()
-    line = file_iterator.next_line()
-    while True:
-        line = file_iterator.next_line()
-        if not line:
-            file_iterator.input_file.seek(position)
-            return
-        elif re.search(search_query, line):
-            next(file_iterator.prev_line())
-            file_iterator.clamp_position_to_one_page_before_end_of_file()
-            return
-
-def search_backwards(search_query, file_iterator):
-    position = file_iterator.input_file.tell()
-    for line in file_iterator.prev_line():
-        if not line:
-            file_iterator.input_file.seek(position)
-            return
-        elif re.search(search_query, line):
-            return
-
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
@@ -283,16 +284,16 @@ def main(screen, input_file, config_filepath):
         elif user_input == ord('/'):
             search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '/')
             if search_query:
-                search_forwards(search_query, file_iterator)
-                input_to_action[ord('n')] = lambda: search_forwards(search_query, file_iterator)
-                input_to_action[ord('N')] = lambda: search_backwards(search_query, file_iterator)
+                file_iterator.search_forwards(search_query)
+                input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_query)
+                input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_query)
                 search_history_file.write_search_query(search_query)
         elif user_input == ord('?'):
             search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
             if search_query:
-                search_backwards(search_query, file_iterator)
-                input_to_action[ord('n')] = lambda: search_backwards(search_query, file_iterator)
-                input_to_action[ord('N')] = lambda: search_forwards(search_query, file_iterator)
+                file_iterator.search_backwards(search_query)
+                input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_query)
+                input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
                 search_history_file.write_search_query(search_query)
 
 if __name__ == '__main__':
