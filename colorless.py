@@ -10,6 +10,22 @@ import time
 
 SEARCH_HIGHLIGHT_COLOR = 255
 
+class HistoryFile:
+    def __init__(self):
+        self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_history')
+
+    def load_search_queries(self):
+        with open(self.filepath, 'a+') as history_file:
+            history_file.seek(0)
+            return history_file.readlines()
+
+    def write_search_query(self, search_query):
+        search_queries = self.load_search_queries()
+        with open(self.filepath, 'w') as history_file:
+            MAX_HISTORY_LINES = 50
+            history_file.write(search_query + '\n')
+            history_file.writelines(search_queries[:MAX_HISTORY_LINES - 1])
+
 class TerminalDimensions:
     def __init__(self, screen):
         self.update(screen)
@@ -95,7 +111,7 @@ def load_config(config_filepath):
         assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
         for (regex, color) in config['regex_to_color'].items():
             assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
-            regex_to_color[re.compile(r'({0})'.format(regex))] = color
+            regex_to_color[r'({0})'.format(regex)] = color
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
     return regex_to_color
@@ -103,7 +119,7 @@ def load_config(config_filepath):
 def color_regexes_in_line(line, regex_to_color):
     regex_line = '\0' * len(line)
     for regex, color in regex_to_color.items():
-        tokens = regex.split(line)
+        tokens = re.split(regex, line)
         col = 0
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
@@ -115,16 +131,8 @@ def color_regexes_in_line(line, regex_to_color):
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
-def split_on_identical_adjacent(color_line):
-    if not color_line:
-        return []
-    identical_adjacents = [color_line[0]]
-    for c in color_line[1:]:
-        if c == identical_adjacents[-1][0]:
-            identical_adjacents[-1] += c
-        else:
-            identical_adjacents.append(c)
-    return identical_adjacents
+def split_colors(color_line):
+    return [color_string for color_string, color_byte in re.findall(r'((.)\2*)', color_line)]
 
 def redraw_screen(screen, regex_to_color, file_iterator):
     position = file_iterator.input_file.tell()
@@ -140,7 +148,7 @@ def redraw_screen(screen, regex_to_color, file_iterator):
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
             screen.addstr(row, 0, wrapped_line)
             col = 0
-            for split_color in split_on_identical_adjacent(wrapped_color_line):
+            for split_color in split_colors(wrapped_color_line):
                 if split_color[0] != '0':
                     screen.addstr(row, col, wrapped_line[col:col + len(split_color)], curses.color_pair(ord(split_color[0])))
                 col += len(split_color)
@@ -179,18 +187,18 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_char):
     screen.addstr(term_dims.rows, 0, search_char)
     curses.echo()
     try:
-        search_regex = re.compile(screen.getstr(term_dims.rows, 1, term_dims.cols))
+        search_query = screen.getstr(term_dims.rows, 1, term_dims.cols)
     except KeyboardInterrupt:
         curses.noecho()
         screen.clear()
         return None
     curses.noecho()
     screen.clear()
-    highlight_regex = re.compile(r'({0})'.format(search_regex.pattern))
+    highlight_regex = r'({0})'.format(search_query)
     regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
-    return search_regex
+    return search_query
 
-def search_forwards(search_regex, file_iterator):
+def search_forwards(search_query, file_iterator):
     position = file_iterator.input_file.tell()
     line = file_iterator.next_line()
     while True:
@@ -198,23 +206,24 @@ def search_forwards(search_regex, file_iterator):
         if not line:
             file_iterator.input_file.seek(position)
             return
-        elif search_regex.search(line):
+        elif re.search(search_query, line):
             next(file_iterator.prev_line())
             file_iterator.clamp_position_to_one_page_before_end_of_file()
             return
 
-def search_backwards(search_regex, file_iterator):
+def search_backwards(search_query, file_iterator):
     position = file_iterator.input_file.tell()
     for line in file_iterator.prev_line():
         if not line:
             file_iterator.input_file.seek(position)
             return
-        elif search_regex.search(line):
+        elif re.search(search_query, line):
             return
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
+    history_file = HistoryFile()
     curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
@@ -231,6 +240,7 @@ def main(screen, input_file, config_filepath):
     }.items()}
 
     highlight_regex = ''
+    search_queries = history_file.load_search_queries()
     while True:
         redraw_screen(screen, regex_to_color, file_iterator)
         user_input = screen.getch()
@@ -244,17 +254,19 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            search_regex = enter_search_mode(screen, regex_to_color, term_dims, '/')
-            if search_regex:
-                search_forwards(search_regex, file_iterator)
-                input_to_action[ord('n')] = lambda: search_forwards(search_regex, file_iterator)
-                input_to_action[ord('N')] = lambda: search_backwards(search_regex, file_iterator)
+            search_query = enter_search_mode(screen, regex_to_color, term_dims, '/')
+            if search_query:
+                search_forwards(search_query, file_iterator)
+                input_to_action[ord('n')] = lambda: search_forwards(search_query, file_iterator)
+                input_to_action[ord('N')] = lambda: search_backwards(search_query, file_iterator)
+                history_file.write_search_query(search_query)
         elif user_input == ord('?'):
-            search_regex = enter_search_mode(screen, regex_to_color, term_dims, '?')
-            if search_regex:
-                search_backwards(search_regex, file_iterator)
-                input_to_action[ord('n')] = lambda: search_backwards(search_regex, file_iterator)
-                input_to_action[ord('N')] = lambda: search_forwards(search_regex, file_iterator)
+            search_query = enter_search_mode(screen, regex_to_color, term_dims, '?')
+            if search_query:
+                search_backwards(search_query, file_iterator)
+                input_to_action[ord('n')] = lambda: search_backwards(search_query, file_iterator)
+                input_to_action[ord('N')] = lambda: search_forwards(search_query, file_iterator)
+                history_file.write_search_query(search_query)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
