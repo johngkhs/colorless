@@ -20,11 +20,9 @@ class SearchHistoryFile:
             search_history_file.seek(0)
             return [line.rstrip('\n') for line in search_history_file.readlines()]
 
-    def write_search_query(self, search_query):
-        search_queries = self.load_search_queries()
+    def write_search_queries(self, search_queries):
         with open(self.filepath, 'w') as search_history_file:
             MAX_HISTORY_LINES = 50
-            search_history_file.write(search_query + '\n')
             search_history_file.writelines(s + '\n' for s in search_queries[:MAX_HISTORY_LINES - 1])
 
 class TerminalDimensions:
@@ -288,14 +286,16 @@ def main(screen, input_file, config_filepath):
                 file_iterator.search_forwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_query)
-                search_history_file.write_search_query(search_query)
+                search_queries = list(collections.OrderedDict.fromkeys(search_queries))
+                search_history_file.write_search_queries(search_queries)
         elif user_input == ord('?'):
             search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
             if search_query:
                 file_iterator.search_backwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
-                search_history_file.write_search_query(search_query)
+                search_queries = list(collections.OrderedDict.fromkeys(search_queries))
+                search_history_file.write_search_queries(search_queries)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
