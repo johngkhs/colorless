@@ -140,22 +140,20 @@ def load_config(config_filepath):
     return regex_to_color
 
 def color_regexes_in_line(line, regex_to_color):
-    regex_line = '\0' * len(line)
+    regex_line = [0] * len(line)
     for regex, color in regex_to_color.items():
         tokens = re.split(regex, line)
         col = 0
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                 regex_line = regex_line[:col] + chr(color) * len(token) + regex_line[col + len(token):]
+                for i in range(col, col + len(token)):
+                    regex_line[i] = color
             col += len(token)
     return regex_line
 
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
-
-def split_colors(color_line):
-    return [color_string for color_string, color_byte in re.findall(r'((.)\2*)', color_line)]
 
 def redraw_screen(screen, regex_to_color, file_iterator):
     position = file_iterator.input_file.tell()
@@ -171,10 +169,9 @@ def redraw_screen(screen, regex_to_color, file_iterator):
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
             screen.addstr(row, 0, wrapped_line)
             col = 0
-            for split_color in split_colors(wrapped_color_line):
-                if split_color[0] != '0':
-                    screen.addstr(row, col, wrapped_line[col:col + len(split_color)], curses.color_pair(ord(split_color[0])))
-                col += len(split_color)
+            for col, color in enumerate(wrapped_color_line):
+                if color != '0':
+                    screen.addstr(row, col, wrapped_line[col], curses.color_pair(color))
             row += 1
             if row >= file_iterator.term_dims.rows:
                 break
