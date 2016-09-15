@@ -67,9 +67,6 @@ class FileIterator:
     def seek_to_start_of_file(self):
         self.input_file.seek(0, os.SEEK_SET)
 
-    def seek_to_end_of_file(self):
-        self.input_file.seek(0, os.SEEK_END)
-
     def seek_next_wrapped_line(self):
         line = self.next_line()
         if len(line) > self.term_dims.cols:
@@ -90,7 +87,7 @@ class FileIterator:
             self.seek_prev_wrapped_line()
 
     def seek_to_one_page_before_end_of_file(self):
-        self.seek_to_end_of_file()
+        self.input_file.seek(0, os.SEEK_END)
         self.seek_prev_wrapped_lines(self.term_dims.rows)
 
     def clamp_position_to_one_page_before_end_of_file(self):
@@ -153,7 +150,7 @@ def color_regexes_in_line(line, regex_to_color):
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
-def redraw_screen(screen, regex_to_color, file_iterator):
+def redraw_screen(screen, regex_to_color, file_iterator, user_input_counter):
     position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
@@ -175,7 +172,9 @@ def redraw_screen(screen, regex_to_color, file_iterator):
             if row >= file_iterator.term_dims.rows:
                 break
     file_iterator.input_file.seek(position)
-    screen.addstr(file_iterator.term_dims.rows, 0, ':')
+    screen.move(file_iterator.term_dims.rows, 1)
+    screen.clrtoeol()
+    screen.addstr(file_iterator.term_dims.rows, 0, ':' + user_input_counter)
     screen.refresh()
 
 def tail_loop(screen, regex_to_color, file_iterator, term_dims):
@@ -265,14 +264,20 @@ def main(screen, input_file, config_filepath):
 
     highlight_regex = ''
     search_queries = search_history_file.load_search_queries()
+    user_input_counter = ''
     while True:
-        redraw_screen(screen, regex_to_color, file_iterator)
+        redraw_screen(screen, regex_to_color, file_iterator, user_input_counter)
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
-            pass
-        if user_input in input_to_action:
-            input_to_action[user_input]()
+            user_input_counter = ''
+        if user_input in [ord(str(i)) for i in range(10)]:
+            user_input_counter += chr(user_input)
+        elif user_input in input_to_action:
+            counter = int(user_input_counter) if user_input_counter else 1
+            for _ in range(counter):
+                input_to_action[user_input]()
+            user_input_counter = ''
         elif user_input == curses.KEY_RESIZE:
             screen.clear()
             term_dims.update(screen)
@@ -296,6 +301,8 @@ def main(screen, input_file, config_filepath):
                 input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
                 search_queries = list(collections.OrderedDict.fromkeys(search_queries))
                 search_history_file.write_search_queries(search_queries)
+        else:
+            user_input_counter = ''
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
