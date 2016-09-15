@@ -3,6 +3,7 @@
 import argparse
 import collections
 import curses
+import itertools
 import os
 import re
 import sys
@@ -147,8 +148,7 @@ def color_regexes_in_line(line, regex_to_color):
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                for i in range(col, col + len(token)):
-                    regex_line[i] = color
+                regex_line[col:col + len(token) + 1] = [color] * len(token)
             col += len(token)
     return regex_line
 
@@ -169,9 +169,10 @@ def redraw_screen(screen, regex_to_color, file_iterator):
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
             screen.addstr(row, 0, wrapped_line)
             col = 0
-            for col, color in enumerate(wrapped_color_line):
-                if color != '0':
-                    screen.addstr(row, col, wrapped_line[col], curses.color_pair(color))
+            for color, length in [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_color_line)]:
+                if color != 0:
+                    screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
+                col += length
             row += 1
             if row >= file_iterator.term_dims.rows:
                 break
