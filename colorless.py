@@ -271,7 +271,10 @@ def main(screen, input_file, config_filepath):
     search_queries = search_history_file.load_search_queries()
     while True:
         redraw_screen(screen, regex_to_color, file_iterator)
-        user_input = screen.getch()
+        try:
+            user_input = screen.getch()
+        except KeyboardInterrupt:
+            pass
         if user_input in input_to_action:
             input_to_action[user_input]()
         elif user_input == curses.KEY_RESIZE:
