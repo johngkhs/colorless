@@ -57,14 +57,18 @@ class FileIterator:
             lines = chunk.splitlines(True)
             if len(lines) == 1:
                 self.input_file.seek(-(len(lines[0])), os.SEEK_CUR)
-                assert self.input_file.tell() == 0, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
-                yield lines[0]
-                yield ''
-                return
-            assert len(lines) > 1, 'File contained a line > {0} characters'.format(CHUNK_SIZE)
-            for line in reversed(lines[1:]):
-                self.input_file.seek(-len(line), os.SEEK_CUR)
-                yield line
+                if self.input_file.tell() == 0:
+                    yield lines[0]
+                    yield ''
+                    return
+                else:
+                    CHUNK_SIZE *= 2
+                    self.input_file.seek(chunk_size, os.SEEK_CUR)
+                    continue
+            else:
+                for line in reversed(lines[1:]):
+                    self.input_file.seek(-len(line), os.SEEK_CUR)
+                    yield line
 
     def next_line(self):
         return self.input_file.readline()
