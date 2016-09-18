@@ -2,7 +2,6 @@
 
 import argparse
 import collections
-import copy
 import curses
 import itertools
 import os
@@ -113,7 +112,7 @@ class FileIterator:
         self.seek_next_wrapped_lines(count)
         self.clamp_position_to_one_page_before_end_of_file()
 
-    def search_forwards(self, search_query):
+    def search_forwards(self, search_regex):
         position = self.input_file.tell()
         try:
             line = self.next_line()
@@ -122,21 +121,21 @@ class FileIterator:
                 if not line:
                     self.input_file.seek(position)
                     return
-                elif re.search(search_query, line):
+                elif search_regex.search(line):
                     next(self.prev_line_iterator())
                     self.clamp_position_to_one_page_before_end_of_file()
                     return
         except KeyboardInterrupt:
             self.input_file.seek(position)
 
-    def search_backwards(self, search_query):
+    def search_backwards(self, search_regex):
         position = self.input_file.tell()
         try:
             for line in self.prev_line_iterator():
                 if not line:
                     self.input_file.seek(position)
                     return
-                elif re.search(search_query, line):
+                elif search_regex.search(line):
                     return
         except KeyboardInterrupt:
             self.input_file.seek(position)
@@ -149,7 +148,7 @@ def load_config(config_filepath):
         assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
         for (regex, color) in config['regex_to_color'].items():
             assert 1 <= color <= 255, '\'{0}\': {1} is invalid. Color must be in the range [1, 255].'.format(regex, color)
-            regex_to_color[r'({0})'.format(regex)] = color
+            regex_to_color[re.compile(r'({0})'.format(regex))] = color
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
     return regex_to_color
@@ -157,7 +156,7 @@ def load_config(config_filepath):
 def color_regexes_in_line(line, regex_to_color):
     regex_line = [0] * len(line)
     for regex, color in regex_to_color.items():
-        tokens = re.split(regex, line)
+        tokens = regex.split(line)
         col = 0
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
@@ -170,9 +169,9 @@ def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
 def redraw_screen(screen, regex_to_color, file_iterator, search_history, prompt):
-    new_regex_to_color = copy.deepcopy(regex_to_color)
+    new_regex_to_color = collections.OrderedDict(regex_to_color.items())
     if search_history.get_most_recent_search_query():
-        new_regex_to_color[r'({0})'.format(search_history.get_most_recent_search_query())] = search_history.HIGHLIGHT_COLOR
+        new_regex_to_color[re.compile(r'({0})'.format(search_history.get_most_recent_search_query()), re.IGNORECASE)] = search_history.HIGHLIGHT_COLOR
     position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
@@ -300,18 +299,20 @@ def main(screen, input_file, config_filepath):
             new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '/')
             if new_search_query:
                 search_query = new_search_query
+                search_regex = re.compile(search_query, re.IGNORECASE)
                 search_history.add_search_query(search_query)
-                file_iterator.search_forwards(search_query)
-                input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_query)
-                input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_query)
+                file_iterator.search_forwards(search_regex)
+                input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_regex)
+                input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_regex)
         elif user_input == ord('?'):
             new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '?')
             if new_search_query:
                 search_query = new_search_query
+                search_regex = re.compile(search_query, re.IGNORECASE)
                 search_history.add_search_query(search_query)
-                file_iterator.search_backwards(search_query)
-                input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_query)
-                input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
+                file_iterator.search_backwards(search_regex)
+                input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_regex)
+                input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_regex)
         elif user_input == ord('%'):
             percentage_of_file = 0.01 * min(100, int(user_input_number)) if user_input_number else 0.0
             file_iterator.seek_to_percentage_of_file(percentage_of_file)
