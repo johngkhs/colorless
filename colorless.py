@@ -245,7 +245,7 @@ def get_search_query_input(screen, term_dims, search_history):
         screen.refresh()
     return search_query
 
-def enter_search_mode(screen, regex_to_color, term_dims, search_history, search_char):
+def enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, search_char):
     screen.addstr(term_dims.rows, 0, search_char)
     curses.echo()
     try:
@@ -253,10 +253,19 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_history, search_
     except KeyboardInterrupt:
         curses.noecho()
         screen.clear()
-        return None
+        return
     curses.noecho()
     screen.clear()
-    return search_query
+    search_regex = re.compile(search_query, re.IGNORECASE)
+    search_history.add_search_query(search_query)
+    if search_char == '/':
+        file_iterator.search_forwards(search_regex)
+        input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_regex)
+        input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_regex)
+    else:
+        file_iterator.search_backwards(search_regex)
+        input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_regex)
+        input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_regex)
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
@@ -299,23 +308,9 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '/')
-            if new_search_query:
-                search_query = new_search_query
-                search_regex = re.compile(search_query, re.IGNORECASE)
-                search_history.add_search_query(search_query)
-                file_iterator.search_forwards(search_regex)
-                input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_regex)
-                input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_regex)
+            enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '/')
         elif user_input == ord('?'):
-            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '?')
-            if new_search_query:
-                search_query = new_search_query
-                search_regex = re.compile(search_query, re.IGNORECASE)
-                search_history.add_search_query(search_query)
-                file_iterator.search_backwards(search_regex)
-                input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_regex)
-                input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_regex)
+            enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '?')
         elif user_input == ord('%'):
             percentage_of_file = 0.01 * min(100, int(user_input_number)) if user_input_number else 0.0
             file_iterator.seek_to_percentage_of_file(percentage_of_file)
