@@ -113,28 +113,33 @@ class FileIterator:
         self.seek_next_wrapped_lines(count)
         self.clamp_position_to_one_page_before_end_of_file()
 
-
     def search_forwards(self, search_query):
         position = self.input_file.tell()
-        line = self.next_line()
-        while True:
+        try:
             line = self.next_line()
-            if not line:
-                self.input_file.seek(position)
-                return
-            elif re.search(search_query, line):
-                next(self.prev_line_iterator())
-                self.clamp_position_to_one_page_before_end_of_file()
-                return
+            while True:
+                line = self.next_line()
+                if not line:
+                    self.input_file.seek(position)
+                    return
+                elif re.search(search_query, line):
+                    next(self.prev_line_iterator())
+                    self.clamp_position_to_one_page_before_end_of_file()
+                    return
+        except KeyboardInterrupt:
+            self.input_file.seek(position)
 
     def search_backwards(self, search_query):
         position = self.input_file.tell()
-        for line in self.prev_line_iterator():
-            if not line:
-                self.input_file.seek(position)
-                return
-            elif re.search(search_query, line):
-                return
+        try:
+            for line in self.prev_line_iterator():
+                if not line:
+                    self.input_file.seek(position)
+                    return
+                elif re.search(search_query, line):
+                    return
+        except KeyboardInterrupt:
+            self.input_file.seek(position)
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
