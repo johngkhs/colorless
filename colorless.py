@@ -146,15 +146,14 @@ class FileIterator:
 
 def load_config(config_filepath):
     regex_to_color = collections.OrderedDict()
-    if config_filepath:
-        config = {}
-        execfile(config_filepath, config)
-        assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
-        for (regex, color) in config['regex_to_color'].items():
-            assert 1 <= color <= 255, '\'{0}\': {1} is invalid. Color must be in the range [1, 255].'.format(regex, color)
-            regex_to_color[re.compile(r'({0})'.format(regex))] = color
-            DEFAULT_BACKGROUND_COLOR = -1
-            curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
+    config = {}
+    execfile(config_filepath, config)
+    assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
+    for (regex, color) in config['regex_to_color'].items():
+        assert 1 <= color <= 255, '\'{0}\': {1} is invalid. Color must be in the range [1, 255].'.format(regex, color)
+        regex_to_color[re.compile(r'({0})'.format(regex))] = color
+        DEFAULT_BACKGROUND_COLOR = -1
+        curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
     return regex_to_color
 
 def color_regexes_in_line(line, regex_to_color):
@@ -261,7 +260,7 @@ def enter_search_mode(screen, regex_to_color, term_dims, search_history, search_
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
-    regex_to_color = load_config(config_filepath)
+    regex_to_color = load_config(config_filepath) if config_filepath else collections.OrderedDict()
     search_history = SearchHistory()
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
@@ -326,8 +325,8 @@ def main(screen, input_file, config_filepath):
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
-    arg_parser.add_argument('-c', '--config', metavar='config.py', nargs='?')
+    arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
     args = arg_parser.parse_args()
     with open(args.filepath, 'r') as input_file:
-        curses.wrapper(main, input_file, args.config)
+        curses.wrapper(main, input_file, args.config_filepath)
