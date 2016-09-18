@@ -143,14 +143,14 @@ def color_regexes_in_line(line, regex_to_color):
         for index, token in enumerate(tokens):
             token_matches_regex = (index % 2 == 1)
             if token_matches_regex:
-                regex_line[col:col + len(token) + 1] = [color] * len(token)
+                regex_line[col:col + len(token)] = [color] * len(token)
             col += len(token)
     return regex_line
 
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
-def redraw_screen(screen, regex_to_color, file_iterator, user_input_counter):
+def redraw_screen(screen, regex_to_color, file_iterator, prompt):
     position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
@@ -174,16 +174,14 @@ def redraw_screen(screen, regex_to_color, file_iterator, user_input_counter):
     file_iterator.input_file.seek(position)
     screen.move(file_iterator.term_dims.rows, 1)
     screen.clrtoeol()
-    screen.addstr(file_iterator.term_dims.rows, 0, ':' + user_input_counter)
+    screen.addstr(file_iterator.term_dims.rows, 0, prompt)
     screen.refresh()
 
 def tail_loop(screen, regex_to_color, file_iterator, term_dims):
     if screen.getch() == curses.KEY_RESIZE:
         term_dims.update(screen)
     file_iterator.seek_to_one_page_before_end_of_file()
-    redraw_screen(screen, regex_to_color, file_iterator)
-    screen.addstr(term_dims.rows, 0, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 1])
-    screen.refresh()
+    redraw_screen(screen, regex_to_color, file_iterator, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
 
 def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
     screen.nodelay(1)
@@ -264,20 +262,21 @@ def main(screen, input_file, config_filepath):
 
     highlight_regex = ''
     search_queries = search_history_file.load_search_queries()
-    user_input_counter = ''
+    user_input_number = ''
     while True:
-        redraw_screen(screen, regex_to_color, file_iterator, user_input_counter)
+        redraw_screen(screen, regex_to_color, file_iterator, ':' + user_input_number)
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
-            user_input_counter = ''
+            user_input_number = ''
+            continue
         if user_input in [ord(str(i)) for i in range(10)]:
-            user_input_counter += chr(user_input)
+            user_input_number += chr(user_input)
         elif user_input in input_to_action:
-            counter = int(user_input_counter) if user_input_counter else 1
+            counter = int(user_input_number) if user_input_number else 1
             for _ in range(counter):
                 input_to_action[user_input]()
-            user_input_counter = ''
+            user_input_number = ''
         elif user_input == curses.KEY_RESIZE:
             screen.clear()
             term_dims.update(screen)
@@ -286,23 +285,25 @@ def main(screen, input_file, config_filepath):
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '/')
-            if search_query:
+            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '/')
+            if new_search_query:
+                search_query = new_search_query
                 file_iterator.search_forwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_query)
                 search_queries = list(collections.OrderedDict.fromkeys(search_queries))
                 search_history_file.write_search_queries(search_queries)
         elif user_input == ord('?'):
-            search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
-            if search_query:
+            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
+            if new_search_query:
+                search_query = new_search_query
                 file_iterator.search_backwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
                 search_queries = list(collections.OrderedDict.fromkeys(search_queries))
                 search_history_file.write_search_queries(search_queries)
         else:
-            user_input_counter = ''
+            user_input_number = ''
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
