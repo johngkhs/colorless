@@ -64,6 +64,14 @@ class FileIterator:
     def next_line(self):
         return self.input_file.readline()
 
+    def seek_to_percentage_of_file(self, percentage):
+        assert 0.0 <= percentage <= 1.0
+        self.input_file.seek(0, os.SEEK_END)
+        total_bytes_in_file = self.input_file.tell()
+        self.input_file.seek(percentage * total_bytes_in_file)
+        next(self.prev_line_iterator())
+        self.clamp_position_to_one_page_before_end_of_file()
+
     def seek_to_start_of_file(self):
         self.input_file.seek(0, os.SEEK_SET)
 
@@ -302,6 +310,10 @@ def main(screen, input_file, config_filepath):
                 input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
                 search_queries = list(collections.OrderedDict.fromkeys(search_queries))
                 search_history_file.write_search_queries(search_queries)
+        elif user_input == ord('%'):
+            percentage_of_file = 0.01 * min(100, int(user_input_number)) if user_input_number else 0.0
+            file_iterator.seek_to_percentage_of_file(percentage_of_file)
+            user_input_number = ''
         else:
             user_input_number = ''
 
