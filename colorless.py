@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import copy
 import curses
 import itertools
 import os
@@ -9,21 +10,26 @@ import re
 import sys
 import time
 
-SEARCH_HIGHLIGHT_COLOR = 255
-
-class SearchHistoryFile:
+class SearchHistory:
     def __init__(self):
+        self.HIGHLIGHT_COLOR = 256
+        curses.init_pair(self.HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+        self.most_recent_search_query = None
         self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_history')
-
-    def load_search_queries(self):
         with open(self.filepath, 'a+') as search_history_file:
             search_history_file.seek(0)
-            return [line.rstrip('\n') for line in search_history_file.readlines()]
+            self.search_queries = [line.rstrip('\n') for line in search_history_file.readlines()]
 
-    def write_search_queries(self, search_queries):
+    def get_most_recent_search_query(self):
+        return self.most_recent_search_query
+
+    def add_search_query(self, search_query):
+        self.most_recent_search_query = search_query
+        self.search_queries.insert(0, search_query)
+        self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))
         with open(self.filepath, 'w') as search_history_file:
             MAX_HISTORY_LINES = 50
-            search_history_file.writelines(s + '\n' for s in search_queries[:MAX_HISTORY_LINES - 1])
+            search_history_file.writelines(s + '\n' for s in self.search_queries[:MAX_HISTORY_LINES - 1])
 
 class TerminalDimensions:
     def __init__(self, screen):
@@ -137,7 +143,7 @@ def load_config(config_filepath):
         execfile(config_filepath, config)
         assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
         for (regex, color) in config['regex_to_color'].items():
-            assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
+            assert 1 <= color <= 255, '\'{0}\': {1} is invalid. Color must be in the range [1, 255].'.format(regex, color)
             regex_to_color[r'({0})'.format(regex)] = color
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
@@ -158,7 +164,10 @@ def color_regexes_in_line(line, regex_to_color):
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
-def redraw_screen(screen, regex_to_color, file_iterator, prompt):
+def redraw_screen(screen, regex_to_color, file_iterator, search_history, prompt):
+    new_regex_to_color = copy.deepcopy(regex_to_color)
+    if search_history.get_most_recent_search_query():
+        new_regex_to_color[r'({0})'.format(search_history.get_most_recent_search_query())] = search_history.HIGHLIGHT_COLOR
     position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
@@ -166,7 +175,7 @@ def redraw_screen(screen, regex_to_color, file_iterator, prompt):
         line = file_iterator.next_line()
         if not line:
             break
-        color_line = color_regexes_in_line(line, regex_to_color)
+        color_line = color_regexes_in_line(line, new_regex_to_color)
         wrapped_lines = wrap(line, file_iterator.term_dims.cols)
         wrapped_color_lines = wrap(color_line, file_iterator.term_dims.cols)
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
@@ -185,25 +194,25 @@ def redraw_screen(screen, regex_to_color, file_iterator, prompt):
     screen.addstr(file_iterator.term_dims.rows, 0, prompt)
     screen.refresh()
 
-def tail_loop(screen, regex_to_color, file_iterator, term_dims):
+def tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims):
     if screen.getch() == curses.KEY_RESIZE:
         term_dims.update(screen)
     file_iterator.seek_to_one_page_before_end_of_file()
-    redraw_screen(screen, regex_to_color, file_iterator, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
+    redraw_screen(screen, regex_to_color, file_iterator, search_history, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
 
-def enter_tail_mode(screen, regex_to_color, file_iterator, term_dims):
+def enter_tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
     screen.nodelay(1)
     curses.curs_set(0)
     try:
         while True:
-            tail_loop(screen, regex_to_color, file_iterator, term_dims)
+            tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims)
             time.sleep(0.1)
     except KeyboardInterrupt:
         screen.clear()
     screen.nodelay(0)
     curses.curs_set(1)
 
-def get_search_query_input(screen, term_dims, search_queries):
+def get_search_query_input(screen, term_dims, search_history):
     search_query = ''
     search_queries_index = 0
     while True:
@@ -211,13 +220,13 @@ def get_search_query_input(screen, term_dims, search_queries):
         if user_input == curses.KEY_BACKSPACE or user_input == 127:
             search_query = search_query[:-1]
         elif user_input == curses.KEY_UP:
-            if search_queries_index < len(search_queries):
-                search_query = search_queries[search_queries_index]
+            if search_queries_index < len(search_history.search_queries):
+                search_query = search_history.search_queries[search_queries_index]
                 search_queries_index += 1
         elif user_input == curses.KEY_DOWN:
             if search_queries_index > 0:
                 search_queries_index -= 1
-                search_query = search_queries[search_queries_index]
+                search_query = search_history.search_queries[search_queries_index]
         elif 0 <= user_input <= 255:
             if chr(user_input) == '\n':
                 break
@@ -229,31 +238,23 @@ def get_search_query_input(screen, term_dims, search_queries):
         screen.refresh()
     return search_query
 
-def enter_search_mode(screen, regex_to_color, term_dims, search_queries, search_char):
-    for regex, color in regex_to_color.items():
-        if color == SEARCH_HIGHLIGHT_COLOR:
-            del regex_to_color[regex]
-            break
+def enter_search_mode(screen, regex_to_color, term_dims, search_history, search_char):
     screen.addstr(term_dims.rows, 0, search_char)
     curses.echo()
     try:
-        search_query = get_search_query_input(screen, term_dims, search_queries)
+        search_query = get_search_query_input(screen, term_dims, search_history)
     except KeyboardInterrupt:
         curses.noecho()
         screen.clear()
         return None
     curses.noecho()
     screen.clear()
-    highlight_regex = r'({0})'.format(search_query)
-    regex_to_color[highlight_regex] = SEARCH_HIGHLIGHT_COLOR
-    search_queries.insert(0, search_query)
     return search_query
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath)
-    search_history_file = SearchHistoryFile()
-    curses.init_pair(SEARCH_HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    search_history = SearchHistory()
     term_dims = TerminalDimensions(screen)
     file_iterator = FileIterator(input_file, term_dims)
     input_to_action = {ord(key): action for (key, action) in {
@@ -268,11 +269,9 @@ def main(screen, input_file, config_filepath):
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
-    highlight_regex = ''
-    search_queries = search_history_file.load_search_queries()
     user_input_number = ''
     while True:
-        redraw_screen(screen, regex_to_color, file_iterator, ':' + user_input_number)
+        redraw_screen(screen, regex_to_color, file_iterator, search_history, ':' + user_input_number)
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
@@ -289,27 +288,25 @@ def main(screen, input_file, config_filepath):
             screen.clear()
             term_dims.update(screen)
         elif user_input == ord('F'):
-            enter_tail_mode(screen, regex_to_color, file_iterator, term_dims)
+            enter_tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims)
             term_dims.update(screen)
             file_iterator.seek_to_one_page_before_end_of_file()
         elif user_input == ord('/'):
-            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '/')
+            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '/')
             if new_search_query:
                 search_query = new_search_query
+                search_history.add_search_query(search_query)
                 file_iterator.search_forwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_query)
-                search_queries = list(collections.OrderedDict.fromkeys(search_queries))
-                search_history_file.write_search_queries(search_queries)
         elif user_input == ord('?'):
-            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_queries, '?')
+            new_search_query = enter_search_mode(screen, regex_to_color, term_dims, search_history, '?')
             if new_search_query:
                 search_query = new_search_query
+                search_history.add_search_query(search_query)
                 file_iterator.search_backwards(search_query)
                 input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_query)
                 input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_query)
-                search_queries = list(collections.OrderedDict.fromkeys(search_queries))
-                search_history_file.write_search_queries(search_queries)
         elif user_input == ord('%'):
             percentage_of_file = 0.01 * min(100, int(user_input_number)) if user_input_number else 0.0
             file_iterator.seek_to_percentage_of_file(percentage_of_file)
