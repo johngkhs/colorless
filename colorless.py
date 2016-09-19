@@ -14,12 +14,15 @@ class ListIterator:
         self.index = 0
         self.items = items
 
-    def move_index_by(self, count):
-        self.index = self.clamp(0, self.index + count, len(self.items) - 1)
-        return self.items[self.index]
+    def next(self):
+        return self.__iter_by(1)
 
-    def clamp(self, minimum, x, maximum):
-        return max(minimum, min(x, maximum))
+    def prev(self):
+        return self.__iter_by(-1)
+
+    def __iter_by(self, count):
+        self.index = max(0, min(self.index + count, len(self.items) - 1))
+        return self.items[self.index]
 
 class SearchHistory:
     def __init__(self):
@@ -244,8 +247,8 @@ def get_search_query_input(screen, term_dims, search_history):
     KEY_DELETE = 127
     input_to_search_query = {
         KEY_DELETE : lambda: search_query[:-1],
-        curses.KEY_UP : lambda: search_queries_iter.move_index_by(1),
-        curses.KEY_DOWN : lambda: search_queries_iter.move_index_by(-1)
+        curses.KEY_UP : lambda: search_queries_iter.next(),
+        curses.KEY_DOWN : lambda: search_queries_iter.prev()
     }
 
     while True:
