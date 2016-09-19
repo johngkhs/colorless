@@ -228,16 +228,18 @@ def tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims):
     redraw_screen(screen, regex_to_color, file_iterator, search_history, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
 
 def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
-    screen.nodelay(1)
-    curses.curs_set(0)
     try:
+        screen.nodelay(1)
+        curses.curs_set(0)
         while True:
             tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims)
             time.sleep(0.1)
     except KeyboardInterrupt:
+        pass
+    finally:
         screen.clear()
-    screen.nodelay(0)
-    curses.curs_set(1)
+        screen.nodelay(0)
+        curses.curs_set(1)
     term_dims.update(screen)
     file_iterator.seek_to_one_page_before_end_of_file()
 
@@ -266,16 +268,15 @@ def get_search_query_input(screen, term_dims, search_history):
     return search_query
 
 def search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, search_char):
-    screen.addstr(term_dims.rows, 0, search_char)
-    curses.echo()
     try:
+        screen.addstr(term_dims.rows, 0, search_char)
+        curses.echo()
         search_query = get_search_query_input(screen, term_dims, search_history)
     except KeyboardInterrupt:
+        return
+    finally:
         curses.noecho()
         screen.clear()
-        return
-    curses.noecho()
-    screen.clear()
     search_regex = re.compile(search_query, re.IGNORECASE) if search_query.islower() else re.compile(search_query)
     search_history.add_search_query(search_query)
     if search_char == '/':
