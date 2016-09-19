@@ -37,6 +37,12 @@ class SearchHistory:
     def get_most_recent_search_query(self):
         return self.most_recent_search_query
 
+    def add_to_regex_to_color(self, regex_to_color):
+        regex_to_color_copy = collections.OrderedDict(regex_to_color.items())
+        if self.get_most_recent_search_query():
+            regex_to_color_copy[search_query_to_smartcase_regex(self.get_most_recent_search_query())] = self.HIGHLIGHT_COLOR
+        return regex_to_color_copy
+
     def add_search_query(self, search_query):
         self.most_recent_search_query = search_query
         self.search_queries.insert(0, search_query)
@@ -191,20 +197,17 @@ def search_query_to_smartcase_regex(search_query):
         return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
     return re.compile(r'({0})'.format(search_query))
 
-def redraw_screen(screen, regex_to_color, file_iterator, search_history, prompt):
-    new_regex_to_color = collections.OrderedDict(regex_to_color.items())
-    if search_history.get_most_recent_search_query():
-        new_regex_to_color[search_query_to_smartcase_regex(search_history.get_most_recent_search_query())] = search_history.HIGHLIGHT_COLOR
-    position = file_iterator.input_file.tell()
+def redraw_screen(screen, regex_to_color, file_iter, prompt):
+    position = file_iter.input_file.tell()
     screen.move(0, 0)
     row = 0
-    while row < file_iterator.term_dims.rows:
-        line = file_iterator.next_line()
+    while row < file_iter.term_dims.rows:
+        line = file_iter.next_line()
         if not line:
             break
-        color_line = color_regexes_in_line(line, new_regex_to_color)
-        wrapped_lines = wrap(line, file_iterator.term_dims.cols)
-        wrapped_color_lines = wrap(color_line, file_iterator.term_dims.cols)
+        color_line = color_regexes_in_line(line, regex_to_color)
+        wrapped_lines = wrap(line, file_iter.term_dims.cols)
+        wrapped_color_lines = wrap(color_line, file_iter.term_dims.cols)
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
             screen.addstr(row, 0, wrapped_line)
             col = 0
@@ -213,26 +216,26 @@ def redraw_screen(screen, regex_to_color, file_iterator, search_history, prompt)
                     screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
                 col += length
             row += 1
-            if row >= file_iterator.term_dims.rows:
+            if row >= file_iter.term_dims.rows:
                 break
-    file_iterator.input_file.seek(position)
-    screen.move(file_iterator.term_dims.rows, 1)
+    file_iter.input_file.seek(position)
+    screen.move(file_iter.term_dims.rows, 1)
     screen.clrtoeol()
-    screen.addstr(file_iterator.term_dims.rows, 0, prompt)
+    screen.addstr(file_iter.term_dims.rows, 0, prompt)
     screen.refresh()
 
-def tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims):
+def tail_loop(screen, regex_to_color, file_iter, term_dims):
     if screen.getch() == curses.KEY_RESIZE:
         term_dims.update(screen)
-    file_iterator.seek_to_one_page_before_end_of_file()
-    redraw_screen(screen, regex_to_color, file_iterator, search_history, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
+    file_iter.seek_to_one_page_before_end_of_file()
+    redraw_screen(screen, regex_to_color, file_iter, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
 
-def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
+def tail_mode(screen, regex_to_color, file_iter, term_dims):
     try:
         screen.nodelay(1)
         curses.curs_set(0)
         while True:
-            tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims)
+            tail_loop(screen, regex_to_color, file_iter, term_dims)
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -241,7 +244,7 @@ def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
         screen.nodelay(0)
         curses.curs_set(1)
     term_dims.update(screen)
-    file_iterator.seek_to_one_page_before_end_of_file()
+    file_iter.seek_to_one_page_before_end_of_file()
 
 def get_search_query_input(screen, term_dims, search_history):
     search_query = ''
@@ -267,7 +270,7 @@ def get_search_query_input(screen, term_dims, search_history):
         screen.refresh()
     return search_query
 
-def search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, search_char):
+def search_mode(screen, input_to_action, file_iter, term_dims, search_history, search_char):
     try:
         screen.addstr(term_dims.rows, 0, search_char)
         curses.echo()
@@ -280,40 +283,40 @@ def search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dim
     search_regex = re.compile(search_query, re.IGNORECASE) if search_query.islower() else re.compile(search_query)
     search_history.add_search_query(search_query)
     if search_char == '/':
-        file_iterator.search_forwards(search_regex)
-        input_to_action[ord('n')] = lambda: file_iterator.search_forwards(search_regex)
-        input_to_action[ord('N')] = lambda: file_iterator.search_backwards(search_regex)
+        file_iter.search_forwards(search_regex)
+        input_to_action[ord('n')] = lambda: file_iter.search_forwards(search_regex)
+        input_to_action[ord('N')] = lambda: file_iter.search_backwards(search_regex)
     else:
-        file_iterator.search_backwards(search_regex)
-        input_to_action[ord('n')] = lambda: file_iterator.search_backwards(search_regex)
-        input_to_action[ord('N')] = lambda: file_iterator.search_forwards(search_regex)
+        file_iter.search_backwards(search_regex)
+        input_to_action[ord('n')] = lambda: file_iter.search_backwards(search_regex)
+        input_to_action[ord('N')] = lambda: file_iter.search_forwards(search_regex)
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     regex_to_color = load_config(config_filepath) if config_filepath else collections.OrderedDict()
     search_history = SearchHistory()
     term_dims = TerminalDimensions(screen)
-    file_iterator = FileIterator(input_file, term_dims)
+    file_iter = FileIterator(input_file, term_dims)
     input_to_action = {ord(key): action for (key, action) in {
-        'j' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(1),
-        'k' : lambda: file_iterator.seek_prev_wrapped_lines(1),
-        'd' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(term_dims.rows / 2),
-        'u' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows / 2),
-        'f' : lambda: file_iterator.seek_next_wrapped_lines_and_clamp_position(term_dims.rows),
-        'b' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows),
-        'g' : lambda: file_iterator.seek_to_start_of_file(),
-        'G' : lambda: file_iterator.seek_to_one_page_before_end_of_file(),
-        'H' : lambda: file_iterator.seek_to_percentage_of_file(0.25),
-        'M' : lambda: file_iterator.seek_to_percentage_of_file(0.50),
-        'L' : lambda: file_iterator.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims),
-        '/' : lambda: search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '/'),
-        '?' : lambda: search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '?'),
+        'j' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(1),
+        'k' : lambda: file_iter.seek_prev_wrapped_lines(1),
+        'd' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(term_dims.rows / 2),
+        'u' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows / 2),
+        'f' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(term_dims.rows),
+        'b' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
+        'g' : lambda: file_iter.seek_to_start_of_file(),
+        'G' : lambda: file_iter.seek_to_one_page_before_end_of_file(),
+        'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
+        'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
+        'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
+        'F' : lambda: tail_mode(screen, regex_to_color, file_iter, term_dims),
+        '/' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '/'),
+        '?' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '?'),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
     while True:
-        redraw_screen(screen, regex_to_color, file_iterator, search_history, ':')
+        redraw_screen(screen, search_history.add_to_regex_to_color(regex_to_color), file_iter, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
