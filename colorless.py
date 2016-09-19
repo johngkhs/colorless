@@ -11,21 +11,22 @@ import time
 
 class ListIterator:
     def __init__(self, items):
-        self.index = -1
+        self.index = 0
         self.items = items
 
     def move_index_by(self, count):
-        if not self.items:
-            return ''
-        self.index = max(0, min(self.index + count, len(self.items) - 1))
+        self.index = self.clamp(0, self.index + count, len(self.items) - 1)
         return self.items[self.index]
+
+    def clamp(self, minimum, x, maximum):
+        return max(minimum, min(x, maximum))
 
 class SearchHistory:
     def __init__(self):
         self.HIGHLIGHT_COLOR = 256
         curses.init_pair(self.HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
         self.most_recent_search_query = None
-        self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_history')
+        self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_search_history')
         with open(self.filepath, 'a+') as search_history_file:
             search_history_file.seek(0)
             self.search_queries = [line.rstrip('\n') for line in search_history_file.readlines()]
@@ -239,7 +240,7 @@ def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
 
 def get_search_query_input(screen, term_dims, search_history):
     search_query = ''
-    search_queries_iter = ListIterator(search_history.search_queries)
+    search_queries_iter = ListIterator([''] + search_history.search_queries)
     KEY_DELETE = 127
     input_to_search_query = {
         KEY_DELETE : lambda: search_query[:-1],
