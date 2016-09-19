@@ -9,6 +9,17 @@ import re
 import sys
 import time
 
+class ListIterator:
+    def __init__(self, items):
+        self.index = -1
+        self.items = items
+
+    def move_index_by(self, count):
+        if not self.items:
+            return ''
+        self.index = max(0, min(self.index + count, len(self.items) - 1))
+        return self.items[self.index]
+
 class SearchHistory:
     def __init__(self):
         self.HIGHLIGHT_COLOR = 256
@@ -223,24 +234,22 @@ def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
 
 def get_search_query_input(screen, term_dims, search_history):
     search_query = ''
-    search_queries_index = 0
+    search_queries_iter = ListIterator(search_history.search_queries)
+    KEY_DELETE = 127
+    input_to_search_query = {
+        KEY_DELETE : lambda: search_query[:-1],
+        curses.KEY_UP : lambda: search_queries_iter.move_index_by(1),
+        curses.KEY_DOWN : lambda: search_queries_iter.move_index_by(-1)
+    }
+
     while True:
         user_input = screen.getch()
-        if user_input == curses.KEY_BACKSPACE or user_input == 127:
-            search_query = search_query[:-1]
-        elif user_input == curses.KEY_UP:
-            if search_queries_index < len(search_history.search_queries):
-                search_query = search_history.search_queries[search_queries_index]
-                search_queries_index += 1
-        elif user_input == curses.KEY_DOWN:
-            if search_queries_index > 0:
-                search_queries_index -= 1
-                search_query = search_history.search_queries[search_queries_index]
+        if user_input in input_to_search_query:
+            search_query = input_to_search_query[user_input]()
         elif 0 <= user_input <= 255:
             if chr(user_input) == '\n':
                 break
-            else:
-                search_query += chr(user_input)
+            search_query += chr(user_input)
         screen.move(term_dims.rows, 1)
         screen.clrtoeol()
         screen.addstr(term_dims.rows, 1, search_query)
