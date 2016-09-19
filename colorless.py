@@ -182,10 +182,15 @@ def color_regexes_in_line(line, regex_to_color):
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
+def search_query_to_smartcase_regex(search_query):
+    if search_query.islower():
+        return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
+    return re.compile(r'({0})'.format(search_query))
+
 def redraw_screen(screen, regex_to_color, file_iterator, search_history, prompt):
     new_regex_to_color = collections.OrderedDict(regex_to_color.items())
     if search_history.get_most_recent_search_query():
-        new_regex_to_color[re.compile(r'({0})'.format(search_history.get_most_recent_search_query()), re.IGNORECASE)] = search_history.HIGHLIGHT_COLOR
+        new_regex_to_color[search_query_to_smartcase_regex(search_history.get_most_recent_search_query())] = search_history.HIGHLIGHT_COLOR
     position = file_iterator.input_file.tell()
     screen.move(0, 0)
     row = 0
@@ -267,7 +272,7 @@ def search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dim
         return
     curses.noecho()
     screen.clear()
-    search_regex = re.compile(search_query, re.IGNORECASE)
+    search_regex = re.compile(search_query, re.IGNORECASE) if search_query.islower() else re.compile(search_query)
     search_history.add_search_query(search_query)
     if search_char == '/':
         file_iterator.search_forwards(search_regex)
