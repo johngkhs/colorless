@@ -26,7 +26,7 @@ class ListIterator:
 
 class SearchHistory:
     def __init__(self):
-        self.HIGHLIGHT_COLOR = 256
+        self.HIGHLIGHT_COLOR = 255
         curses.init_pair(self.HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
         self.most_recent_search_query = None
         self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_search_history')
@@ -94,16 +94,25 @@ class FileIterator:
     def next_line(self):
         return self.input_file.readline()
 
+    def get_file_size_in_bytes(self):
+        position = self.input_file.tell()
+        self.seek_to_end_of_file()
+        file_size_in_bytes = self.input_file.tell()
+        self.input_file.seek(position)
+        return file_size_in_bytes
+
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
-        self.input_file.seek(0, os.SEEK_END)
-        total_bytes_in_file = self.input_file.tell()
-        self.input_file.seek(percentage * total_bytes_in_file)
+        file_size_in_bytes = self.get_file_size_in_bytes()
+        self.input_file.seek(percentage * file_size_in_bytes)
         next(self.prev_line_iterator())
         self.clamp_position_to_one_page_before_end_of_file()
 
     def seek_to_start_of_file(self):
         self.input_file.seek(0, os.SEEK_SET)
+
+    def seek_to_end_of_file(self):
+        self.input_file.seek(0, os.SEEK_END)
 
     def seek_next_wrapped_line(self):
         line = self.next_line()
@@ -125,7 +134,7 @@ class FileIterator:
             self.seek_prev_wrapped_line()
 
     def seek_to_one_page_before_end_of_file(self):
-        self.input_file.seek(0, os.SEEK_END)
+        self.seek_to_end_of_file()
         self.seek_prev_wrapped_lines(self.term_dims.rows)
 
     def clamp_position_to_one_page_before_end_of_file(self):
@@ -171,7 +180,7 @@ def load_config(config_filepath):
     execfile(config_filepath, config)
     assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
     for (regex, color) in config['regex_to_color'].items():
-        assert 1 <= color <= 255, '\'{0}\': {1} is invalid. Color must be in the range [1, 255].'.format(regex, color)
+        assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
         regex_to_color[re.compile(r'({0})'.format(regex))] = color
         DEFAULT_BACKGROUND_COLOR = -1
         curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
@@ -234,8 +243,12 @@ def tail_mode(screen, regex_to_color, file_iter, term_dims):
     try:
         screen.nodelay(1)
         curses.curs_set(0)
+        tail_loop(screen, regex_to_color, file_iter, term_dims)
+        file_size_in_bytes = file_iter.get_file_size_in_bytes()
         while True:
-            tail_loop(screen, regex_to_color, file_iter, term_dims)
+            if file_size_in_bytes != file_iter.get_file_size_in_bytes():
+                tail_loop(screen, regex_to_color, file_iter, term_dims)
+                file_size_in_bytes = file_iter.get_file_size_in_bytes()
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -252,6 +265,7 @@ def get_search_query_input(screen, term_dims, search_history):
     KEY_DELETE = 127
     input_to_search_query = {
         KEY_DELETE : lambda: search_query[:-1],
+        curses.KEY_BACKSPACE : lambda: search_query[:-1],
         curses.KEY_UP : lambda: search_queries_iter.next(),
         curses.KEY_DOWN : lambda: search_queries_iter.prev()
     }
@@ -309,7 +323,7 @@ def main(screen, input_file, config_filepath):
         'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode(screen, regex_to_color, file_iter, term_dims),
+        'F' : lambda: tail_mode(screen, search_history.add_to_regex_to_color(regex_to_color), file_iter, term_dims),
         '/' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '/'),
         '?' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '?'),
         'q' : lambda: sys.exit(os.EX_OK)
