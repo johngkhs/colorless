@@ -207,7 +207,7 @@ def tail_loop(screen, regex_to_color, file_iterator, search_history, term_dims):
     file_iterator.seek_to_one_page_before_end_of_file()
     redraw_screen(screen, regex_to_color, file_iterator, search_history, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
 
-def enter_tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
+def tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims):
     screen.nodelay(1)
     curses.curs_set(0)
     try:
@@ -218,6 +218,8 @@ def enter_tail_mode(screen, regex_to_color, file_iterator, search_history, term_
         screen.clear()
     screen.nodelay(0)
     curses.curs_set(1)
+    term_dims.update(screen)
+    file_iterator.seek_to_one_page_before_end_of_file()
 
 def get_search_query_input(screen, term_dims, search_history):
     search_query = ''
@@ -245,7 +247,7 @@ def get_search_query_input(screen, term_dims, search_history):
         screen.refresh()
     return search_query
 
-def enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, search_char):
+def search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, search_char):
     screen.addstr(term_dims.rows, 0, search_char)
     curses.echo()
     try:
@@ -282,41 +284,25 @@ def main(screen, input_file, config_filepath):
         'b' : lambda: file_iterator.seek_prev_wrapped_lines(term_dims.rows),
         'g' : lambda: file_iterator.seek_to_start_of_file(),
         'G' : lambda: file_iterator.seek_to_one_page_before_end_of_file(),
+        'H' : lambda: file_iterator.seek_to_percentage_of_file(0.25),
+        'M' : lambda: file_iterator.seek_to_percentage_of_file(0.50),
+        'L' : lambda: file_iterator.seek_to_percentage_of_file(0.75),
+        'F' : lambda: tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims),
+        '/' : lambda: search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '/'),
+        '?' : lambda: search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '?'),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
-    user_input_number = ''
     while True:
-        redraw_screen(screen, regex_to_color, file_iterator, search_history, ':' + user_input_number)
+        redraw_screen(screen, regex_to_color, file_iterator, search_history, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
-            user_input_number = ''
             continue
-        if user_input in [ord(str(i)) for i in range(10)]:
-            user_input_number += chr(user_input)
+        if user_input == curses.KEY_RESIZE:
+            term_dims.update(screen)
         elif user_input in input_to_action:
-            counter = int(user_input_number) if user_input_number else 1
-            for _ in range(counter):
-                input_to_action[user_input]()
-            user_input_number = ''
-        elif user_input == curses.KEY_RESIZE:
-            screen.clear()
-            term_dims.update(screen)
-        elif user_input == ord('F'):
-            enter_tail_mode(screen, regex_to_color, file_iterator, search_history, term_dims)
-            term_dims.update(screen)
-            file_iterator.seek_to_one_page_before_end_of_file()
-        elif user_input == ord('/'):
-            enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '/')
-        elif user_input == ord('?'):
-            enter_search_mode(screen, input_to_action, file_iterator, regex_to_color, term_dims, search_history, '?')
-        elif user_input == ord('%'):
-            percentage_of_file = 0.01 * min(100, int(user_input_number)) if user_input_number else 0.0
-            file_iterator.seek_to_percentage_of_file(percentage_of_file)
-            user_input_number = ''
-        else:
-            user_input_number = ''
+            input_to_action[user_input]()
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
