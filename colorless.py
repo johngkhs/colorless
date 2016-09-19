@@ -9,6 +9,9 @@ import re
 import sys
 import time
 
+def merge_dicts(lhs, rhs):
+    return collections.OrderedDict(lhs.items() + rhs.items())
+
 class ListIterator:
     def __init__(self, items):
         self.index = 0
@@ -34,14 +37,13 @@ class SearchHistory:
             search_history_file.seek(0)
             self.search_queries = [line.rstrip('\n') for line in search_history_file.readlines()]
 
-    def get_most_recent_search_query(self):
-        return self.most_recent_search_query
+    def to_regex(self):
+        return self.__to_smartcase_regex(self.most_recent_search_query)
 
-    def add_to_regex_to_color(self, regex_to_color):
-        regex_to_color_copy = collections.OrderedDict(regex_to_color.items())
-        if self.get_most_recent_search_query():
-            regex_to_color_copy[search_query_to_smartcase_regex(self.get_most_recent_search_query())] = self.HIGHLIGHT_COLOR
-        return regex_to_color_copy
+    def to_regex_to_color(self):
+        if self.most_recent_search_query:
+            return {self.__to_smartcase_regex(self.most_recent_search_query) : self.HIGHLIGHT_COLOR}
+        return {}
 
     def add_search_query(self, search_query):
         self.most_recent_search_query = search_query
@@ -50,6 +52,11 @@ class SearchHistory:
         with open(self.filepath, 'w') as search_history_file:
             MAX_HISTORY_LINES = 50
             search_history_file.writelines(s + '\n' for s in self.search_queries[:MAX_HISTORY_LINES - 1])
+
+    def __to_smartcase_regex(self, search_query):
+        if search_query.islower():
+            return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
+        return re.compile(r'({0})'.format(search_query))
 
 class TerminalDimensions:
     def __init__(self, screen):
@@ -201,11 +208,6 @@ def color_regexes_in_line(line, regex_to_color):
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
 
-def search_query_to_smartcase_regex(search_query):
-    if search_query.islower():
-        return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
-    return re.compile(r'({0})'.format(search_query))
-
 def redraw_screen(screen, regex_to_color, file_iter, prompt):
     position = file_iter.input_file.tell()
     screen.move(0, 0)
@@ -259,7 +261,7 @@ def tail_mode(screen, regex_to_color, file_iter, term_dims):
     term_dims.update(screen)
     file_iter.seek_to_one_page_before_end_of_file()
 
-def get_search_query_input(screen, term_dims, search_history):
+def get_user_inputted_search_query(screen, term_dims, search_history):
     search_query = ''
     search_queries_iter = ListIterator([''] + search_history.search_queries)
     KEY_DELETE = 127
@@ -288,14 +290,14 @@ def search_mode(screen, input_to_action, file_iter, term_dims, search_history, s
     try:
         screen.addstr(term_dims.rows, 0, search_char)
         curses.echo()
-        search_query = get_search_query_input(screen, term_dims, search_history)
+        search_query = get_user_inputted_search_query(screen, term_dims, search_history)
     except KeyboardInterrupt:
         return
     finally:
         curses.noecho()
         screen.clear()
-    search_regex = re.compile(search_query, re.IGNORECASE) if search_query.islower() else re.compile(search_query)
     search_history.add_search_query(search_query)
+    search_regex = search_history.to_regex()
     if search_char == '/':
         file_iter.search_forwards(search_regex)
         input_to_action[ord('n')] = lambda: file_iter.search_forwards(search_regex)
@@ -323,14 +325,14 @@ def main(screen, input_file, config_filepath):
         'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode(screen, search_history.add_to_regex_to_color(regex_to_color), file_iter, term_dims),
+        'F' : lambda: tail_mode(screen, merge_dicts(regex_to_color, search_history.to_regex_to_color()), file_iter, term_dims),
         '/' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '/'),
         '?' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '?'),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
     while True:
-        redraw_screen(screen, search_history.add_to_regex_to_color(regex_to_color), file_iter, ':')
+        redraw_screen(screen, merge_dicts(regex_to_color, search_history.to_regex_to_color()), file_iter, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
