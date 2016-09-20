@@ -255,10 +255,9 @@ class TailMode:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             pass
-        finally:
-            self.screen.clear()
-            self.screen.nodelay(0)
-            curses.curs_set(1)
+        self.screen.clear()
+        self.screen.nodelay(0)
+        curses.curs_set(1)
         self.term_dims.update(self.screen)
         self.file_iter.seek_to_last_page()
 
@@ -323,7 +322,7 @@ class SearchMode:
         return search_query
 
 def wrap(line, cols):
-    return [line[i:i+cols] for i in range(0, len(line), cols)]
+    return [line[i:i + cols] for i in range(0, len(line), cols)]
 
 def distinct_colors(wrapped_colored_line):
     return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
