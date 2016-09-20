@@ -251,31 +251,38 @@ def redraw_screen(screen, regex_to_color, file_iter, prompt):
     screen.addstr(file_iter.term_dims.rows, 0, prompt)
     screen.refresh()
 
-def tail_loop(screen, regex_to_color, file_iter, term_dims):
-    if screen.getch() == curses.KEY_RESIZE:
-        term_dims.update(screen)
-    file_iter.seek_to_one_page_before_end_of_file()
-    redraw_screen(screen, regex_to_color, file_iter, 'Waiting for data... (interrupt to abort)'[:term_dims.cols - 2])
+class TailMode:
+    def __init__(self, screen, term_dims, file_iter, regex_to_color):
+        self.screen = screen
+        self.term_dims = term_dims
+        self.file_iter = file_iter
+        self.regex_to_color = regex_to_color
 
-def tail_mode(screen, regex_to_color, file_iter, term_dims):
-    try:
-        screen.nodelay(1)
-        curses.curs_set(0)
-        tail_loop(screen, regex_to_color, file_iter, term_dims)
-        file_size_in_bytes = file_iter.get_file_size_in_bytes()
-        while True:
-            if file_size_in_bytes != file_iter.get_file_size_in_bytes():
-                tail_loop(screen, regex_to_color, file_iter, term_dims)
-                file_size_in_bytes = file_iter.get_file_size_in_bytes()
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        screen.clear()
-        screen.nodelay(0)
-        curses.curs_set(1)
-    term_dims.update(screen)
-    file_iter.seek_to_one_page_before_end_of_file()
+    def run(self):
+        try:
+            self.screen.nodelay(1)
+            curses.curs_set(0)
+            self.__loop()
+            file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+            while True:
+                if file_size_in_bytes != self.file_iter.get_file_size_in_bytes():
+                    self.__loop()
+                    file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.screen.clear()
+            self.screen.nodelay(0)
+            curses.curs_set(1)
+        self.term_dims.update(self.screen)
+        self.file_iter.seek_to_one_page_before_end_of_file()
+
+    def __loop(self):
+        if self.screen.getch() == curses.KEY_RESIZE:
+            self.term_dims.update(screen)
+        self.file_iter.seek_to_one_page_before_end_of_file()
+        redraw_screen(self.screen, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
 
 class SearchMode:
     def __init__(self, screen, term_dims, file_iter, search_history):
@@ -345,6 +352,7 @@ def main(screen, input_file, config_filepath):
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
+    tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
     input_to_action = {ord(key): action for (key, action) in {
         'j' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(1),
         'k' : lambda: file_iter.seek_prev_wrapped_lines(1),
@@ -357,7 +365,7 @@ def main(screen, input_file, config_filepath):
         'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode(screen, regex_to_color, file_iter, term_dims),
+        'F' : lambda: tail_mode.run(),
         '/' : lambda: search_mode.run('/'),
         '?' : lambda: search_mode.run('?'),
         'n' : lambda: search_mode.next(),
