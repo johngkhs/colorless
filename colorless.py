@@ -322,7 +322,7 @@ def wrap(line, cols):
 def distinct_colors(wrapped_colored_line):
     return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
 
-def color_line(screen, row, wrapped_line, wrapped_colored_line):
+def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
     col = 0
     for color, length in distinct_colors(wrapped_colored_line):
         if color != 0:
@@ -342,7 +342,7 @@ def redraw_screen(screen, regex_to_color, file_iter, prompt):
         wrapped_colored_line = wrap(colored_line, file_iter.term_dims.cols)
         for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_line):
             screen.addstr(row, 0, wrapped_line)
-            color_line(screen, row, wrapped_line, wrapped_colored_line)
+            draw_colored_line(screen, row, wrapped_line, wrapped_colored_line)
             row += 1
             if row >= file_iter.term_dims.rows:
                 break
