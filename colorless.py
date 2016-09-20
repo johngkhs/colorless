@@ -46,7 +46,7 @@ class SearchHistory:
         self.queries = list(collections.OrderedDict.fromkeys(self.queries))[:MAX_QUERIES]
         self.__write_search_history_to_file()
 
-    def get_last_query_regex(self):
+    def get_last_query_as_regex(self):
         assert self.last_query
         return self.__to_smartcase_regex(self.last_query)
 
@@ -93,8 +93,8 @@ class FileIterator:
                     yield ''
                     return
                 else:
-                    CHUNK_SIZE *= 2
                     self.input_file.seek(chunk_size, os.SEEK_CUR)
+                    CHUNK_SIZE *= 2
                     continue
             else:
                 for line in reversed(lines[1:]):
@@ -106,7 +106,7 @@ class FileIterator:
 
     def get_file_size_in_bytes(self):
         position = self.input_file.tell()
-        self.seek_to_end_of_file()
+        self.__seek_to_end_of_file()
         file_size_in_bytes = self.input_file.tell()
         self.input_file.seek(position)
         return file_size_in_bytes
@@ -116,18 +116,10 @@ class FileIterator:
         file_size_in_bytes = self.get_file_size_in_bytes()
         self.input_file.seek(percentage * file_size_in_bytes)
         next(self.prev_line_iterator())
-        self.clamp_position_to_one_page_before_end_of_file()
+        self.clamp_position_to_last_page()
 
     def seek_to_start_of_file(self):
         self.input_file.seek(0, os.SEEK_SET)
-
-    def seek_to_end_of_file(self):
-        self.input_file.seek(0, os.SEEK_END)
-
-    def seek_next_wrapped_line(self):
-        line = self.next_line()
-        if len(line) > self.term_dims.cols:
-            self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
     def seek_prev_wrapped_line(self):
         line = next(self.prev_line_iterator())
@@ -135,54 +127,70 @@ class FileIterator:
         for wrapped_line in wrapped_lines[:-1]:
             self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
 
-    def seek_next_wrapped_lines(self, count):
-        for i in range(count):
-            self.seek_next_wrapped_line()
-
     def seek_prev_wrapped_lines(self, count):
         for i in range(count):
             self.seek_prev_wrapped_line()
 
-    def seek_to_one_page_before_end_of_file(self):
-        self.seek_to_end_of_file()
+    def seek_to_last_page(self):
+        self.__seek_to_end_of_file()
         self.seek_prev_wrapped_lines(self.term_dims.rows)
 
-    def clamp_position_to_one_page_before_end_of_file(self):
+    def clamp_position_to_last_page(self):
         position = self.input_file.tell()
-        self.seek_to_one_page_before_end_of_file()
+        self.seek_to_last_page()
         self.input_file.seek(min(position, input_file.tell()))
 
     def seek_next_wrapped_lines_and_clamp_position(self, count):
-        self.seek_next_wrapped_lines(count)
-        self.clamp_position_to_one_page_before_end_of_file()
+        self.__seek_next_wrapped_lines(count)
+        self.clamp_position_to_last_page()
 
     def search_forwards(self, search_regex):
         position = self.input_file.tell()
         try:
-            line = self.next_line()
-            while True:
-                line = self.next_line()
-                if not line:
-                    self.input_file.seek(position)
-                    return
-                elif search_regex.search(line):
-                    next(self.prev_line_iterator())
-                    self.clamp_position_to_one_page_before_end_of_file()
-                    return
+            self.__search_forwards(search_regex)
         except KeyboardInterrupt:
             self.input_file.seek(position)
 
     def search_backwards(self, search_regex):
         position = self.input_file.tell()
         try:
-            for line in self.prev_line_iterator():
-                if not line:
-                    self.input_file.seek(position)
-                    return
-                elif search_regex.search(line):
-                    return
+            self.__search_backwards(search_regex)
         except KeyboardInterrupt:
             self.input_file.seek(position)
+
+    def __search_forwards(self, search_regex):
+        position = self.input_file.tell()
+        line = self.next_line()
+        while True:
+            line = self.next_line()
+            if not line:
+                self.input_file.seek(position)
+                return
+            elif search_regex.search(line):
+                next(self.prev_line_iterator())
+                self.clamp_position_to_last_page()
+                return
+
+    def __search_backwards(self, search_regex):
+        position = self.input_file.tell()
+        for line in self.prev_line_iterator():
+            if not line:
+                self.input_file.seek(position)
+                return
+            elif search_regex.search(line):
+                return
+
+    def __seek_next_wrapped_line(self):
+        line = self.next_line()
+        if len(line) > self.term_dims.cols:
+            self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
+
+    def __seek_next_wrapped_lines(self, count):
+        for i in range(count):
+            self.__seek_next_wrapped_line()
+
+    def __seek_to_end_of_file(self):
+        self.input_file.seek(0, os.SEEK_END)
 
 class RegexToColor:
     def __init__(self, config_filepath, search_history):
@@ -218,11 +226,99 @@ class RegexToColor:
     def __items(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
         if self.search_history.get_last_query():
-            regex_to_color[self.search_history.get_last_query_regex()] = self.SEARCH_COLOR
+            regex_to_color[self.search_history.get_last_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
 
-def wrap(line, n):
-     return [line[i:i+n] for i in range(0, len(line), n)]
+class TailMode:
+    def __init__(self, screen, term_dims, file_iter, regex_to_color):
+        self.screen = screen
+        self.term_dims = term_dims
+        self.file_iter = file_iter
+        self.regex_to_color = regex_to_color
+
+    def run(self):
+        try:
+            self.screen.nodelay(1)
+            curses.curs_set(0)
+            self.__redraw_last_page()
+            file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+            while True:
+                if file_size_in_bytes != self.file_iter.get_file_size_in_bytes():
+                    self.__redraw_last_page()
+                    file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.screen.clear()
+            self.screen.nodelay(0)
+            curses.curs_set(1)
+        self.term_dims.update(self.screen)
+        self.file_iter.seek_to_last_page()
+
+    def __redraw_last_page(self):
+        if self.screen.getch() == curses.KEY_RESIZE:
+            self.term_dims.update(screen)
+        self.file_iter.seek_to_last_page()
+        redraw_screen(self.screen, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
+
+class SearchMode:
+    def __init__(self, screen, term_dims, file_iter, search_history):
+        self.screen = screen
+        self.term_dims = term_dims
+        self.file_iter = file_iter
+        self.search_history = search_history
+        self.continue_search = lambda: None
+        self.continue_reverse_search = lambda: None
+
+    def run(self, search_char):
+        try:
+            self.screen.addstr(self.term_dims.rows, 0, search_char)
+            curses.echo()
+            search_query = self.__get_user_inputted_search_query()
+        except KeyboardInterrupt:
+            return
+        finally:
+            curses.noecho()
+            self.screen.clear()
+        self.search_history.add(search_query)
+        search_regex = self.search_history.get_last_query_as_regex()
+        if search_char == '/':
+            self.file_iter.search_forwards(search_regex)
+            self.continue_search = lambda: self.file_iter.search_forwards(search_regex)
+            self.continue_reverse_search = lambda: self.file_iter.search_backwards(search_regex)
+        else:
+            self.file_iter.search_backwards(search_regex)
+            self.continue_search = lambda: self.file_iter.search_backwards(search_regex)
+            self.continue_reverse_search = lambda: self.file_iter.search_forwards(search_regex)
+
+    def __get_user_inputted_search_query(self):
+        search_query = ''
+        search_queries_iter = self.search_history.to_iterator()
+        KEY_DELETE = 127
+        input_to_search_query = {
+            KEY_DELETE : lambda: search_query[:-1],
+            curses.KEY_BACKSPACE : lambda: search_query[:-1],
+            curses.KEY_UP : lambda: search_queries_iter.next(),
+            curses.KEY_DOWN : lambda: search_queries_iter.prev()
+        }
+
+        while True:
+            user_input = self.screen.getch()
+            if user_input in input_to_search_query:
+                search_query = input_to_search_query[user_input]()
+            elif 0 <= user_input <= 255:
+                if chr(user_input) == '\n':
+                    break
+                search_query += chr(user_input)
+            self.screen.move(self.term_dims.rows, 1)
+            self.screen.clrtoeol()
+            self.screen.addstr(self.term_dims.rows, 1, search_query)
+            self.screen.refresh()
+        return search_query
+
+def wrap(line, cols):
+     return [line[i:i+cols] for i in range(0, len(line), cols)]
 
 def redraw_screen(screen, regex_to_color, file_iter, prompt):
     position = file_iter.input_file.tell()
@@ -251,100 +347,6 @@ def redraw_screen(screen, regex_to_color, file_iter, prompt):
     screen.addstr(file_iter.term_dims.rows, 0, prompt)
     screen.refresh()
 
-class TailMode:
-    def __init__(self, screen, term_dims, file_iter, regex_to_color):
-        self.screen = screen
-        self.term_dims = term_dims
-        self.file_iter = file_iter
-        self.regex_to_color = regex_to_color
-
-    def run(self):
-        try:
-            self.screen.nodelay(1)
-            curses.curs_set(0)
-            self.__loop()
-            file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
-            while True:
-                if file_size_in_bytes != self.file_iter.get_file_size_in_bytes():
-                    self.__loop()
-                    file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.screen.clear()
-            self.screen.nodelay(0)
-            curses.curs_set(1)
-        self.term_dims.update(self.screen)
-        self.file_iter.seek_to_one_page_before_end_of_file()
-
-    def __loop(self):
-        if self.screen.getch() == curses.KEY_RESIZE:
-            self.term_dims.update(screen)
-        self.file_iter.seek_to_one_page_before_end_of_file()
-        redraw_screen(self.screen, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
-
-class SearchMode:
-    def __init__(self, screen, term_dims, file_iter, search_history):
-        self.screen = screen
-        self.term_dims = term_dims
-        self.file_iter = file_iter
-        self.search_history = search_history
-        self.next_function = lambda: None
-        self.prev_function = lambda: None
-
-    def run(self, search_char):
-        try:
-            self.screen.addstr(self.term_dims.rows, 0, search_char)
-            curses.echo()
-            search_query = self.__get_user_inputted_search_query()
-        except KeyboardInterrupt:
-            return
-        finally:
-            curses.noecho()
-            self.screen.clear()
-        self.search_history.add(search_query)
-        search_regex = self.search_history.get_last_query_regex()
-        if search_char == '/':
-            self.file_iter.search_forwards(search_regex)
-            self.next_function = lambda: self.file_iter.search_forwards(search_regex)
-            self.prev_function = lambda: self.file_iter.search_backwards(search_regex)
-        else:
-            self.file_iter.search_backwards(search_regex)
-            self.next_function = lambda: self.file_iter.search_backwards(search_regex)
-            self.prev_function = lambda: self.file_iter.search_forwards(search_regex)
-
-    def next(self):
-        self.next_function()
-
-    def prev(self):
-        self.prev_function()
-
-    def __get_user_inputted_search_query(self):
-        search_query = ''
-        search_queries_iter = self.search_history.to_iterator()
-        KEY_DELETE = 127
-        input_to_search_query = {
-            KEY_DELETE : lambda: search_query[:-1],
-            curses.KEY_BACKSPACE : lambda: search_query[:-1],
-            curses.KEY_UP : lambda: search_queries_iter.next(),
-            curses.KEY_DOWN : lambda: search_queries_iter.prev()
-        }
-
-        while True:
-            user_input = self.screen.getch()
-            if user_input in input_to_search_query:
-                search_query = input_to_search_query[user_input]()
-            elif 0 <= user_input <= 255:
-                if chr(user_input) == '\n':
-                    break
-                search_query += chr(user_input)
-            self.screen.move(self.term_dims.rows, 1)
-            self.screen.clrtoeol()
-            self.screen.addstr(self.term_dims.rows, 1, search_query)
-            self.screen.refresh()
-        return search_query
-
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
     search_history = SearchHistory()
@@ -361,15 +363,15 @@ def main(screen, input_file, config_filepath):
         'f' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(term_dims.rows),
         'b' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
         'g' : lambda: file_iter.seek_to_start_of_file(),
-        'G' : lambda: file_iter.seek_to_one_page_before_end_of_file(),
+        'G' : lambda: file_iter.seek_to_last_page(),
         'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
         'F' : lambda: tail_mode.run(),
         '/' : lambda: search_mode.run('/'),
         '?' : lambda: search_mode.run('?'),
-        'n' : lambda: search_mode.next(),
-        'N' : lambda: search_mode.prev(),
+        'n' : lambda: search_mode.continue_search(),
+        'N' : lambda: search_mode.continue_reverse_search(),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
