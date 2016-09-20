@@ -9,13 +9,10 @@ import re
 import sys
 import time
 
-def merge_dicts(lhs, rhs):
-    return collections.OrderedDict(lhs.items() + rhs.items())
-
-class ListIterator:
-    def __init__(self, items):
+class SearchHistoryIterator:
+    def __init__(self, queries):
         self.index = 0
-        self.items = items
+        self.queries = queries
 
     def next(self):
         return self.__iter_by(1)
@@ -24,34 +21,40 @@ class ListIterator:
         return self.__iter_by(-1)
 
     def __iter_by(self, count):
-        self.index = max(0, min(self.index + count, len(self.items) - 1))
-        return self.items[self.index]
+        self.index = max(0, min(self.index + count, len(self.queries) - 1))
+        return self.queries[self.index]
 
 class SearchHistory:
     def __init__(self):
-        self.HIGHLIGHT_COLOR = 255
-        curses.init_pair(self.HIGHLIGHT_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-        self.most_recent_search_query = None
+        self.last_query = None
         self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_search_history')
+        self.__load_search_history_from_file()
+
+    def add(self, query):
+        self.last_query = query
+        self.queries.insert(0, query)
+        MAX_QUERIES = 50
+        self.queries = list(collections.OrderedDict.fromkeys(self.queries))[:MAX_QUERIES]
+        self.__write_search_history_to_file()
+
+    def get_last_regex(self):
+        assert self.last_query
+        return self.__to_smartcase_regex(self.last_query)
+
+    def get_last_query(self):
+        return self.last_query
+
+    def to_iterator(self):
+        return SearchHistoryIterator([''] + self.queries)
+
+    def __write_search_history_to_file(self):
+        with open(self.filepath, 'w') as search_history_file:
+            search_history_file.writelines(s + '\n' for s in self.queries)
+
+    def __load_search_history_from_file(self):
         with open(self.filepath, 'a+') as search_history_file:
             search_history_file.seek(0)
-            self.search_queries = [line.rstrip('\n') for line in search_history_file.readlines()]
-
-    def to_regex(self):
-        return self.__to_smartcase_regex(self.most_recent_search_query)
-
-    def to_regex_to_color(self):
-        if self.most_recent_search_query:
-            return {self.__to_smartcase_regex(self.most_recent_search_query) : self.HIGHLIGHT_COLOR}
-        return {}
-
-    def add_search_query(self, search_query):
-        self.most_recent_search_query = search_query
-        self.search_queries.insert(0, search_query)
-        self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))
-        with open(self.filepath, 'w') as search_history_file:
-            MAX_HISTORY_LINES = 50
-            search_history_file.writelines(s + '\n' for s in self.search_queries[:MAX_HISTORY_LINES - 1])
+            self.queries = [line.rstrip('\n') for line in search_history_file.readlines()]
 
     def __to_smartcase_regex(self, search_query):
         if search_query.islower():
@@ -181,17 +184,30 @@ class FileIterator:
         except KeyboardInterrupt:
             self.input_file.seek(position)
 
-def load_config(config_filepath):
-    regex_to_color = collections.OrderedDict()
-    config = {}
-    execfile(config_filepath, config)
-    assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
-    for (regex, color) in config['regex_to_color'].items():
-        assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
-        regex_to_color[re.compile(r'({0})'.format(regex))] = color
-        DEFAULT_BACKGROUND_COLOR = -1
-        curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
-    return regex_to_color
+class RegexToColor:
+    def __init__(self, config_filepath, search_history):
+        self.regex_to_color = collections.OrderedDict()
+        self.search_history = search_history
+        self.SEARCH_COLOR = 255
+        curses.init_pair(self.SEARCH_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+        if config_filepath:
+            self.__load_config(config_filepath)
+
+    def items(self):
+        regex_to_color = collections.OrderedDict(self.regex_to_color.items())
+        if self.search_history.get_last_query():
+            regex_to_color[self.search_history.get_last_regex()] = self.SEARCH_COLOR
+        return regex_to_color.items()
+
+    def __load_config(self, config_filepath):
+        config = {}
+        execfile(config_filepath, config)
+        assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
+        for (regex, color) in config['regex_to_color'].items():
+            assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
+            self.regex_to_color[re.compile(r'({0})'.format(regex))] = color
+            DEFAULT_BACKGROUND_COLOR = -1
+            curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
 def color_regexes_in_line(line, regex_to_color):
     regex_line = [0] * len(line)
@@ -263,7 +279,7 @@ def tail_mode(screen, regex_to_color, file_iter, term_dims):
 
 def get_user_inputted_search_query(screen, term_dims, search_history):
     search_query = ''
-    search_queries_iter = ListIterator([''] + search_history.search_queries)
+    search_queries_iter = search_history.to_iterator()
     KEY_DELETE = 127
     input_to_search_query = {
         KEY_DELETE : lambda: search_query[:-1],
@@ -296,8 +312,8 @@ def search_mode(screen, input_to_action, file_iter, term_dims, search_history, s
     finally:
         curses.noecho()
         screen.clear()
-    search_history.add_search_query(search_query)
-    search_regex = search_history.to_regex()
+    search_history.add(search_query)
+    search_regex = search_history.get_last_regex()
     if search_char == '/':
         file_iter.search_forwards(search_regex)
         input_to_action[ord('n')] = lambda: file_iter.search_forwards(search_regex)
@@ -309,8 +325,8 @@ def search_mode(screen, input_to_action, file_iter, term_dims, search_history, s
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
-    regex_to_color = load_config(config_filepath) if config_filepath else collections.OrderedDict()
     search_history = SearchHistory()
+    regex_to_color = RegexToColor(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     input_to_action = {ord(key): action for (key, action) in {
@@ -325,14 +341,14 @@ def main(screen, input_file, config_filepath):
         'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode(screen, merge_dicts(regex_to_color, search_history.to_regex_to_color()), file_iter, term_dims),
+        'F' : lambda: tail_mode(screen, regex_to_color, file_iter, term_dims),
         '/' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '/'),
         '?' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '?'),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
     while True:
-        redraw_screen(screen, merge_dicts(regex_to_color, search_history.to_regex_to_color()), file_iter, ':')
+        redraw_screen(screen, regex_to_color, file_iter, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
