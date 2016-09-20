@@ -271,11 +271,11 @@ class SearchMode:
         self.continue_search = lambda: None
         self.continue_reverse_search = lambda: None
 
-    def run(self, search_char):
+    def run(self, input_key):
         try:
-            self.screen.addstr(self.term_dims.rows, 0, search_char)
+            self.screen.addstr(self.term_dims.rows, 0, input_key)
             curses.echo()
-            search_query = self.__get_user_inputted_search_query()
+            search_query = self.__wait_for_user_input()
         except KeyboardInterrupt:
             return
         finally:
@@ -283,24 +283,23 @@ class SearchMode:
             self.screen.clear()
         self.search_history.add(search_query)
         search_regex = self.search_history.get_last_query_as_regex()
-        if search_char == '/':
-            self.file_iter.search_forwards(search_regex)
+        if input_key == '/':
             self.continue_search = lambda: self.file_iter.search_forwards(search_regex)
             self.continue_reverse_search = lambda: self.file_iter.search_backwards(search_regex)
         else:
-            self.file_iter.search_backwards(search_regex)
             self.continue_search = lambda: self.file_iter.search_backwards(search_regex)
             self.continue_reverse_search = lambda: self.file_iter.search_forwards(search_regex)
+        self.continue_search()
 
-    def __get_user_inputted_search_query(self):
+    def __wait_for_user_input(self):
         search_query = ''
-        search_queries_iter = self.search_history.to_iterator()
+        search_history_iter = self.search_history.to_iterator()
         KEY_DELETE = 127
         input_to_search_query = {
             KEY_DELETE : lambda: search_query[:-1],
             curses.KEY_BACKSPACE : lambda: search_query[:-1],
-            curses.KEY_UP : lambda: search_queries_iter.next(),
-            curses.KEY_DOWN : lambda: search_queries_iter.prev()
+            curses.KEY_UP : lambda: search_history_iter.next(),
+            curses.KEY_DOWN : lambda: search_history_iter.prev()
         }
 
         while True:
