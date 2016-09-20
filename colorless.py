@@ -101,12 +101,9 @@ class FileIterator:
                     self.input_file.seek(-len(line), os.SEEK_CUR)
                     yield line
 
-    def get_next_lines(self, count):
+    def retrieve_next_lines(self, count):
         position = self.input_file.tell()
-        lines = []
-        for _ in range(count):
-            line = self.next_line()
-            lines.append(line)
+        lines = [self.next_line() for _ in range(count)]
         self.input_file.seek(position)
         return lines
 
@@ -341,7 +338,7 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
 def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.move(0, 0)
     row = 0
-    for line in file_iter.get_next_lines(term_dims.rows):
+    for line in file_iter.retrieve_next_lines(term_dims.rows):
         if not line or row == term_dims.rows:
             break
         colored_line = regex_to_color.to_colored_line(line)
