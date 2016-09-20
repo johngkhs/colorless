@@ -9,6 +9,15 @@ import re
 import sys
 import time
 
+class TerminalDimensions:
+    def __init__(self, screen):
+        self.update(screen)
+
+    def update(self, screen):
+        term_dimensions = screen.getmaxyx()
+        self.rows = term_dimensions[0] - 1
+        self.cols = term_dimensions[1]
+
 class SearchHistoryIterator:
     def __init__(self, queries):
         self.index = 0
@@ -37,7 +46,7 @@ class SearchHistory:
         self.queries = list(collections.OrderedDict.fromkeys(self.queries))[:MAX_QUERIES]
         self.__write_search_history_to_file()
 
-    def get_last_regex(self):
+    def get_last_query_regex(self):
         assert self.last_query
         return self.__to_smartcase_regex(self.last_query)
 
@@ -60,15 +69,6 @@ class SearchHistory:
         if search_query.islower():
             return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
         return re.compile(r'({0})'.format(search_query))
-
-class TerminalDimensions:
-    def __init__(self, screen):
-        self.update(screen)
-
-    def update(self, screen):
-        term_dimensions = screen.getmaxyx()
-        self.rows = term_dimensions[0] - 1
-        self.cols = term_dimensions[1]
 
 class FileIterator:
     def __init__(self, input_file, term_dims):
@@ -193,11 +193,17 @@ class RegexToColor:
         if config_filepath:
             self.__load_config(config_filepath)
 
-    def items(self):
-        regex_to_color = collections.OrderedDict(self.regex_to_color.items())
-        if self.search_history.get_last_query():
-            regex_to_color[self.search_history.get_last_regex()] = self.SEARCH_COLOR
-        return regex_to_color.items()
+    def to_colored_line(self, line):
+        colored_line = [0] * len(line)
+        for regex, color in self.__items():
+            tokens = regex.split(line)
+            col = 0
+            for index, token in enumerate(tokens):
+                token_matches_regex = (index % 2 == 1)
+                if token_matches_regex:
+                    colored_line[col:col + len(token)] = [color] * len(token)
+                col += len(token)
+        return colored_line
 
     def __load_config(self, config_filepath):
         config = {}
@@ -209,17 +215,11 @@ class RegexToColor:
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
-def color_regexes_in_line(line, regex_to_color):
-    regex_line = [0] * len(line)
-    for regex, color in regex_to_color.items():
-        tokens = regex.split(line)
-        col = 0
-        for index, token in enumerate(tokens):
-            token_matches_regex = (index % 2 == 1)
-            if token_matches_regex:
-                regex_line[col:col + len(token)] = [color] * len(token)
-            col += len(token)
-    return regex_line
+    def __items(self):
+        regex_to_color = collections.OrderedDict(self.regex_to_color.items())
+        if self.search_history.get_last_query():
+            regex_to_color[self.search_history.get_last_query_regex()] = self.SEARCH_COLOR
+        return regex_to_color.items()
 
 def wrap(line, n):
      return [line[i:i+n] for i in range(0, len(line), n)]
@@ -232,7 +232,7 @@ def redraw_screen(screen, regex_to_color, file_iter, prompt):
         line = file_iter.next_line()
         if not line:
             break
-        color_line = color_regexes_in_line(line, regex_to_color)
+        color_line = regex_to_color.to_colored_line(line)
         wrapped_lines = wrap(line, file_iter.term_dims.cols)
         wrapped_color_lines = wrap(color_line, file_iter.term_dims.cols)
         for (wrapped_line, wrapped_color_line) in zip(wrapped_lines, wrapped_color_lines):
@@ -313,7 +313,7 @@ def search_mode(screen, input_to_action, file_iter, term_dims, search_history, s
         curses.noecho()
         screen.clear()
     search_history.add(search_query)
-    search_regex = search_history.get_last_regex()
+    search_regex = search_history.get_last_query_regex()
     if search_char == '/':
         file_iter.search_forwards(search_regex)
         input_to_action[ord('n')] = lambda: file_iter.search_forwards(search_regex)
