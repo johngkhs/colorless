@@ -277,51 +277,66 @@ def tail_mode(screen, regex_to_color, file_iter, term_dims):
     term_dims.update(screen)
     file_iter.seek_to_one_page_before_end_of_file()
 
-def get_user_inputted_search_query(screen, term_dims, search_history):
-    search_query = ''
-    search_queries_iter = search_history.to_iterator()
-    KEY_DELETE = 127
-    input_to_search_query = {
-        KEY_DELETE : lambda: search_query[:-1],
-        curses.KEY_BACKSPACE : lambda: search_query[:-1],
-        curses.KEY_UP : lambda: search_queries_iter.next(),
-        curses.KEY_DOWN : lambda: search_queries_iter.prev()
-    }
+class SearchMode:
+    def __init__(self, screen, term_dims, file_iter, search_history):
+        self.screen = screen
+        self.term_dims = term_dims
+        self.file_iter = file_iter
+        self.search_history = search_history
+        self.next_function = lambda: None
+        self.prev_function = lambda: None
 
-    while True:
-        user_input = screen.getch()
-        if user_input in input_to_search_query:
-            search_query = input_to_search_query[user_input]()
-        elif 0 <= user_input <= 255:
-            if chr(user_input) == '\n':
-                break
-            search_query += chr(user_input)
-        screen.move(term_dims.rows, 1)
-        screen.clrtoeol()
-        screen.addstr(term_dims.rows, 1, search_query)
-        screen.refresh()
-    return search_query
+    def run(self, search_char):
+        try:
+            self.screen.addstr(self.term_dims.rows, 0, search_char)
+            curses.echo()
+            search_query = self.__get_user_inputted_search_query()
+        except KeyboardInterrupt:
+            return
+        finally:
+            curses.noecho()
+            self.screen.clear()
+        self.search_history.add(search_query)
+        search_regex = self.search_history.get_last_query_regex()
+        if search_char == '/':
+            self.file_iter.search_forwards(search_regex)
+            self.next_function = lambda: self.file_iter.search_forwards(search_regex)
+            self.prev_function = lambda: self.file_iter.search_backwards(search_regex)
+        else:
+            self.file_iter.search_backwards(search_regex)
+            self.next_function = lambda: self.file_iter.search_backwards(search_regex)
+            self.prev_function = lambda: self.file_iter.search_forwards(search_regex)
 
-def search_mode(screen, input_to_action, file_iter, term_dims, search_history, search_char):
-    try:
-        screen.addstr(term_dims.rows, 0, search_char)
-        curses.echo()
-        search_query = get_user_inputted_search_query(screen, term_dims, search_history)
-    except KeyboardInterrupt:
-        return
-    finally:
-        curses.noecho()
-        screen.clear()
-    search_history.add(search_query)
-    search_regex = search_history.get_last_query_regex()
-    if search_char == '/':
-        file_iter.search_forwards(search_regex)
-        input_to_action[ord('n')] = lambda: file_iter.search_forwards(search_regex)
-        input_to_action[ord('N')] = lambda: file_iter.search_backwards(search_regex)
-    else:
-        file_iter.search_backwards(search_regex)
-        input_to_action[ord('n')] = lambda: file_iter.search_backwards(search_regex)
-        input_to_action[ord('N')] = lambda: file_iter.search_forwards(search_regex)
+    def next(self):
+        self.next_function()
+
+    def prev(self):
+        self.prev_function()
+
+    def __get_user_inputted_search_query(self):
+        search_query = ''
+        search_queries_iter = self.search_history.to_iterator()
+        KEY_DELETE = 127
+        input_to_search_query = {
+            KEY_DELETE : lambda: search_query[:-1],
+            curses.KEY_BACKSPACE : lambda: search_query[:-1],
+            curses.KEY_UP : lambda: search_queries_iter.next(),
+            curses.KEY_DOWN : lambda: search_queries_iter.prev()
+        }
+
+        while True:
+            user_input = self.screen.getch()
+            if user_input in input_to_search_query:
+                search_query = input_to_search_query[user_input]()
+            elif 0 <= user_input <= 255:
+                if chr(user_input) == '\n':
+                    break
+                search_query += chr(user_input)
+            self.screen.move(self.term_dims.rows, 1)
+            self.screen.clrtoeol()
+            self.screen.addstr(self.term_dims.rows, 1, search_query)
+            self.screen.refresh()
+        return search_query
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
@@ -329,6 +344,7 @@ def main(screen, input_file, config_filepath):
     regex_to_color = RegexToColor(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
+    search_mode = SearchMode(screen, term_dims, file_iter, search_history)
     input_to_action = {ord(key): action for (key, action) in {
         'j' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(1),
         'k' : lambda: file_iter.seek_prev_wrapped_lines(1),
@@ -342,8 +358,10 @@ def main(screen, input_file, config_filepath):
         'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
         'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
         'F' : lambda: tail_mode(screen, regex_to_color, file_iter, term_dims),
-        '/' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '/'),
-        '?' : lambda: search_mode(screen, input_to_action, file_iter, term_dims, search_history, '?'),
+        '/' : lambda: search_mode.run('/'),
+        '?' : lambda: search_mode.run('?'),
+        'n' : lambda: search_mode.next(),
+        'N' : lambda: search_mode.prev(),
         'q' : lambda: sys.exit(os.EX_OK)
     }.items()}
 
