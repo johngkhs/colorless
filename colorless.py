@@ -101,6 +101,15 @@ class FileIterator:
                     self.input_file.seek(-len(line), os.SEEK_CUR)
                     yield line
 
+    def get_next_lines(self, count):
+        position = self.input_file.tell()
+        lines = []
+        for _ in range(count):
+            line = self.next_line()
+            lines.append(line)
+        self.input_file.seek(position)
+        return lines
+
     def next_line(self):
         return self.input_file.readline()
 
@@ -260,7 +269,7 @@ class TailMode:
         if self.screen.getch() == curses.KEY_RESIZE:
             self.term_dims.update(screen)
         self.file_iter.seek_to_last_page()
-        redraw_screen(self.screen, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
+        redraw_screen(self.screen, self.term_dims, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
 
 class SearchMode:
     def __init__(self, screen, term_dims, file_iter, search_history):
@@ -317,7 +326,7 @@ class SearchMode:
         return search_query
 
 def wrap(line, cols):
-     return [line[i:i+cols] for i in range(0, len(line), cols)]
+    return [line[i:i+cols] for i in range(0, len(line), cols)]
 
 def distinct_colors(wrapped_colored_line):
     return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
@@ -329,25 +338,22 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
             screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
         col += length
 
-def redraw_screen(screen, regex_to_color, file_iter, prompt):
-    position = file_iter.input_file.tell()
+def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.move(0, 0)
     row = 0
-    while row < file_iter.term_dims.rows:
-        line = file_iter.next_line()
-        if not line:
+    for line in file_iter.get_next_lines(term_dims.rows):
+        if not line or row == term_dims.rows:
             break
         colored_line = regex_to_color.to_colored_line(line)
-        wrapped_lines = wrap(line, file_iter.term_dims.cols)
-        wrapped_colored_line = wrap(colored_line, file_iter.term_dims.cols)
-        for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_line):
+        wrapped_lines = wrap(line, term_dims.cols)
+        wrapped_colored_lines = wrap(colored_line, term_dims.cols)
+        for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
+            if row == term_dims.rows:
+                break
             screen.addstr(row, 0, wrapped_line)
             draw_colored_line(screen, row, wrapped_line, wrapped_colored_line)
             row += 1
-            if row >= file_iter.term_dims.rows:
-                break
-    file_iter.input_file.seek(position)
-    screen.addstr(file_iter.term_dims.rows, 0, prompt)
+    screen.addstr(term_dims.rows, 0, prompt)
     screen.refresh()
 
 def main(screen, input_file, config_filepath):
@@ -379,7 +385,7 @@ def main(screen, input_file, config_filepath):
     }.items()}
 
     while True:
-        redraw_screen(screen, regex_to_color, file_iter, ':')
+        redraw_screen(screen, term_dims, regex_to_color, file_iter, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
