@@ -86,20 +86,16 @@ class FileIterator:
             self.input_file.seek(-chunk_size, os.SEEK_CUR)
             chunk = self.input_file.read(chunk_size)
             lines = chunk.splitlines(True)
-            if len(lines) == 1:
-                self.input_file.seek(-(len(lines[0])), os.SEEK_CUR)
-                if self.input_file.tell() == 0:
-                    yield lines[0]
-                    yield ''
-                    return
-                else:
-                    self.input_file.seek(chunk_size, os.SEEK_CUR)
-                    CHUNK_SIZE *= 2
-                    continue
-            else:
-                for line in reversed(lines[1:]):
-                    self.input_file.seek(-len(line), os.SEEK_CUR)
-                    yield line
+            for line in reversed(lines[1:]):
+                self.input_file.seek(-len(line), os.SEEK_CUR)
+                yield line
+            if self.input_file.tell() == len(lines[0]):
+                self.input_file.seek(-len(lines[0]), os.SEEK_CUR)
+                yield lines[0]
+                yield ''
+                return
+            elif len(lines) == 1:
+                CHUNK_SIZE *= 2
 
     def retrieve_next_lines(self, count):
         position = self.input_file.tell()
