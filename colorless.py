@@ -242,13 +242,11 @@ class TailMode:
         try:
             self.screen.nodelay(1)
             curses.curs_set(0)
-            self.__redraw_last_page()
-            file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
             while True:
-                if file_size_in_bytes != self.file_iter.get_file_size_in_bytes():
-                    self.__redraw_last_page()
-                    file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
-                time.sleep(0.1)
+                file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+                self.__redraw_last_page()
+                while file_size_in_bytes == self.file_iter.get_file_size_in_bytes():
+                    time.sleep(0.1)
         except KeyboardInterrupt:
             pass
         self.screen.clear()
