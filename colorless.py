@@ -386,9 +386,16 @@ def main(screen, input_file, config_filepath):
             input_to_action[user_input]()
 
 if __name__ == '__main__':
-    arg_parser = argparse.ArgumentParser(description='A less-like pager utility with regex highlighting capabilities')
+    description = 'A less-like pager utility with regex highlighting capabilities'
+    epilog = '\n'.join(['Available commands:', 'j: move down one line', 'k: move up one line', 'd: move down half a page', 'u: move up half a page',
+        'f: move down a page', 'b: move up a page', 'g: go to beginning of file', 'G: go to end of file', 'H: go to 25% of file', 'M: go to 50% of file',
+        'L: go to 75% of file', 'F: tail file', '/: search forwards', '?: search backwards', 'n: continue search', 'N: reverse search', 'q: quit'])
+    arg_parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
+    if len(sys.argv[1:]) == 0:
+        arg_parser.print_help()
+        arg_parser.exit()
     args = arg_parser.parse_args()
     with open(args.filepath, 'r') as input_file:
         curses.wrapper(main, input_file, args.config_filepath)
