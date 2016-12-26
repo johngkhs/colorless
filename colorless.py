@@ -249,7 +249,7 @@ class TailMode:
                     time.sleep(0.1)
         except KeyboardInterrupt:
             pass
-        self.screen.clear()
+        self.screen.erase()
         self.screen.nodelay(0)
         curses.curs_set(1)
         self.term_dims.update(self.screen)
@@ -279,7 +279,7 @@ class SearchMode:
             return
         finally:
             curses.noecho()
-            self.screen.clear()
+            self.screen.erase()
         self.search_history.add(search_query)
         search_regex = self.search_history.get_last_query_as_regex()
         if input_key == '/':
