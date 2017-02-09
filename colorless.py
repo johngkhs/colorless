@@ -280,6 +280,8 @@ class SearchMode:
         finally:
             curses.noecho()
             self.screen.erase()
+        if not search_query:
+            return
         self.search_history.add(search_query)
         search_regex = self.search_history.get_last_query_as_regex()
         if input_key == '/':
