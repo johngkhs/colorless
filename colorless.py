@@ -440,8 +440,7 @@ def run(args):
         return os.EX_NOINPUT
     else:
         with input_file:
-            curses.wrapper(run_curses, input_file, args.config_filepath)
-    return os.EX_OK
+            return curses.wrapper(run_curses, input_file, args.config_filepath)
 
 
 def main():
