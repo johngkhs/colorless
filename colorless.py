@@ -10,6 +10,7 @@ import signal
 import sys
 import time
 
+
 class TerminalDimensions:
     def __init__(self, screen):
         self.update(screen)
@@ -18,6 +19,7 @@ class TerminalDimensions:
         term_dimensions = screen.getmaxyx()
         self.rows = term_dimensions[0] - 1
         self.cols = term_dimensions[1]
+
 
 class SearchHistory:
     def __init__(self):
@@ -55,6 +57,7 @@ class SearchHistory:
         if search_query.islower():
             return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
         return re.compile(r'({0})'.format(search_query))
+
 
 class FileIterator:
     def __init__(self, input_file, term_dims):
@@ -180,6 +183,7 @@ class FileIterator:
     def __seek_to_end_of_file(self):
         self.input_file.seek(0, os.SEEK_END)
 
+
 class RegexToColor:
     def __init__(self, config_filepath, search_history):
         self.regex_to_color = collections.OrderedDict()
@@ -217,6 +221,7 @@ class RegexToColor:
             regex_to_color[self.search_history.get_last_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
 
+
 class TailMode:
     def __init__(self, screen, term_dims, file_iter, regex_to_color):
         self.screen = screen
@@ -245,7 +250,9 @@ class TailMode:
         if self.screen.getch() == curses.KEY_RESIZE:
             self.term_dims.update(screen)
         self.file_iter.seek_to_last_page()
-        redraw_screen(self.screen, self.term_dims, self.regex_to_color, self.file_iter, 'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
+        redraw_screen(self.screen, self.term_dims, self.regex_to_color, self.file_iter,
+                      'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
+
 
 class SearchMode:
     def __init__(self, screen, term_dims, file_iter, search_history):
@@ -309,11 +316,14 @@ class SearchMode:
             self.screen.refresh()
         return search_prefix + search_suffix
 
+
 def wrap(line, cols):
     return [line[i:i + cols] for i in range(0, len(line), cols)]
 
+
 def distinct_colors(wrapped_colored_line):
     return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
+
 
 def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
     col = 0
@@ -321,6 +331,7 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
         if color != 0:
             screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
         col += length
+
 
 def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.move(0, 0)
@@ -340,6 +351,7 @@ def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.addstr(term_dims.rows, 0, prompt)
     screen.refresh()
 
+
 def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
@@ -351,23 +363,23 @@ def run_curses(screen, input_file, config_filepath):
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
     input_to_action = {ord(key): action for (key, action) in {
-        'j' : lambda: file_iter.seek_next_wrapped_lines(1),
-        'k' : lambda: file_iter.seek_prev_wrapped_lines(1),
-        'd' : lambda: file_iter.seek_next_wrapped_lines(term_dims.rows / 2),
-        'u' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows / 2),
-        'f' : lambda: file_iter.seek_next_wrapped_lines(term_dims.rows),
-        'b' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
-        'g' : lambda: file_iter.seek_to_start_of_file(),
-        'G' : lambda: file_iter.seek_to_last_page(),
-        'H' : lambda: file_iter.seek_to_percentage_of_file(0.25),
-        'M' : lambda: file_iter.seek_to_percentage_of_file(0.50),
-        'L' : lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F' : lambda: tail_mode.run(),
-        '/' : lambda: search_mode.run('/'),
-        '?' : lambda: search_mode.run('?'),
-        'n' : lambda: search_mode.continue_search(),
-        'N' : lambda: search_mode.continue_reverse_search(),
-        'q' : lambda: sys.exit(os.EX_OK)
+        'j': lambda: file_iter.seek_next_wrapped_lines(1),
+        'k': lambda: file_iter.seek_prev_wrapped_lines(1),
+        'd': lambda: file_iter.seek_next_wrapped_lines(term_dims.rows / 2),
+        'u': lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows / 2),
+        'f': lambda: file_iter.seek_next_wrapped_lines(term_dims.rows),
+        'b': lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
+        'g': lambda: file_iter.seek_to_start_of_file(),
+        'G': lambda: file_iter.seek_to_last_page(),
+        'H': lambda: file_iter.seek_to_percentage_of_file(0.25),
+        'M': lambda: file_iter.seek_to_percentage_of_file(0.50),
+        'L': lambda: file_iter.seek_to_percentage_of_file(0.75),
+        'F': lambda: tail_mode.run(),
+        '/': lambda: search_mode.run('/'),
+        '?': lambda: search_mode.run('?'),
+        'n': lambda: search_mode.continue_search(),
+        'N': lambda: search_mode.continue_reverse_search(),
+        'q': lambda: sys.exit(os.EX_OK)
     }.items()}
 
     while True:
@@ -381,11 +393,27 @@ def run_curses(screen, input_file, config_filepath):
         elif user_input in input_to_action:
             input_to_action[user_input]()
 
+
 def run(args):
     description = 'A less-like pager utility with regex highlighting capabilities'
-    epilog = '\n'.join(['Available commands:', 'j: move down one line', 'k: move up one line', 'd: move down half a page', 'u: move up half a page',
-        'f: move down a page', 'b: move up a page', 'g: go to beginning of file', 'G: go to end of file', 'H: go to 25% of file', 'M: go to 50% of file',
-        'L: go to 75% of file', 'F: tail file', '/: search forwards', '?: search backwards', 'n: continue search', 'N: reverse search', 'q: quit'])
+    epilog = '\n'.join(['Available commands:',
+                        'j: move down one line',
+                        'k: move up one line',
+                        'd: move down half a page',
+                        'u: move up half a page',
+                        'f: move down a page',
+                        'b: move up a page',
+                        'g: go to beginning of file',
+                        'G: go to end of file',
+                        'H: go to 25% of file',
+                        'M: go to 50% of file',
+                        'L: go to 75% of file',
+                        'F: tail file',
+                        '/: search forwards',
+                        '?: search backwards',
+                        'n: continue search',
+                        'N: reverse search',
+                        'q: quit'])
     arg_parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
@@ -403,6 +431,7 @@ def run(args):
             curses.wrapper(run_curses, input_file, args.config_filepath)
     return os.EX_OK
 
+
 def main():
     signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
     try:
@@ -410,6 +439,7 @@ def main():
     except KeyboardInterrupt:
         sys.exit(os.EX_OK)
     sys.exit(exit_code)
+
 
 if __name__ == '__main__':
     main()
