@@ -126,7 +126,7 @@ class FileIterator:
     def clamp_position_to_last_page(self):
         position = self.input_file.tell()
         self.seek_to_last_page()
-        self.input_file.seek(min(position, input_file.tell()))
+        self.input_file.seek(min(position, self.input_file.tell()))
 
     def seek_next_wrapped_lines(self, count):
         self.__seek_next_wrapped_lines(count)
@@ -340,7 +340,7 @@ def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.addstr(term_dims.rows, 0, prompt)
     screen.refresh()
 
-def main(screen, input_file, config_filepath):
+def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
@@ -381,8 +381,7 @@ def main(screen, input_file, config_filepath):
         elif user_input in input_to_action:
             input_to_action[user_input]()
 
-if __name__ == '__main__':
-    signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
+def run(args):
     description = 'A less-like pager utility with regex highlighting capabilities'
     epilog = '\n'.join(['Available commands:', 'j: move down one line', 'k: move up one line', 'd: move down half a page', 'u: move up half a page',
         'f: move down a page', 'b: move up a page', 'g: go to beginning of file', 'G: go to end of file', 'H: go to 25% of file', 'M: go to 50% of file',
@@ -390,9 +389,27 @@ if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
     arg_parser.add_argument('filepath')
-    if len(sys.argv[1:]) == 0:
+    if len(args) == 0:
         arg_parser.print_help()
-        arg_parser.exit()
+        return os.EX_USAGE
     args = arg_parser.parse_args()
-    with open(args.filepath, 'r') as input_file:
-        curses.wrapper(main, input_file, args.config_filepath)
+    try:
+        input_file = open(args.filepath)
+    except EnvironmentError:
+        sys.stderr.write('{}: No such file or directory'.format(args.filepath))
+        return os.EX_NOINPUT
+    else:
+        with input_file:
+            curses.wrapper(run_curses, input_file, args.config_filepath)
+    return os.EX_OK
+
+def main():
+    signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
+    try:
+        exit_code = run(sys.argv[1:])
+    except KeyboardInterrupt:
+        sys.exit(os.EX_OK)
+    sys.exit(exit_code)
+
+if __name__ == '__main__':
+    main()
