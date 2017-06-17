@@ -363,47 +363,47 @@ def run_curses(screen, input_file, config_filepath):
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
     while True:
-        redraw_screen(screen, term_dims, regex_to_color, file_iter, ':')
         try:
+            redraw_screen(screen, term_dims, regex_to_color, file_iter, ':')
             user_input = screen.getch()
+            if user_input == ord('q'):
+                return os.EX_OK
+            elif user_input == curses.KEY_RESIZE:
+                term_dims.update(screen)
+            elif user_input == ord('j'):
+                file_iter.seek_next_wrapped_lines(1)
+            elif user_input == ord('k'):
+                file_iter.seek_prev_wrapped_lines(1)
+            elif user_input == ord('d'):
+                file_iter.seek_next_wrapped_lines(term_dims.rows / 2)
+            elif user_input == ord('u'):
+                file_iter.seek_prev_wrapped_lines(term_dims.rows / 2)
+            elif user_input == ord('f'):
+                file_iter.seek_next_wrapped_lines(term_dims.rows)
+            elif user_input == ord('b'):
+                file_iter.seek_prev_wrapped_lines(term_dims.rows)
+            elif user_input == ord('g'):
+                file_iter.seek_to_start_of_file()
+            elif user_input == ord('G'):
+                file_iter.seek_to_last_page()
+            elif user_input == ord('H'):
+                file_iter.seek_to_percentage_of_file(0.25)
+            elif user_input == ord('M'):
+                file_iter.seek_to_percentage_of_file(0.50)
+            elif user_input == ord('L'):
+                file_iter.seek_to_percentage_of_file(0.75)
+            elif user_input == ord('F'):
+                tail_mode.run()
+            elif user_input == ord('/'):
+                search_mode.run('/')
+            elif user_input == ord('?'):
+                search_mode.run('?')
+            elif user_input == ord('n'):
+                search_mode.continue_search()
+            elif user_input == ord('N'):
+                search_mode.continue_reverse_search()
         except KeyboardInterrupt:
-            continue
-        if user_input == ord('q'):
-            return os.EX_OK
-        elif user_input == curses.KEY_RESIZE:
-            term_dims.update(screen)
-        elif user_input == ord('j'):
-            file_iter.seek_next_wrapped_lines(1)
-        elif user_input == ord('k'):
-            file_iter.seek_prev_wrapped_lines(1)
-        elif user_input == ord('d'):
-            file_iter.seek_next_wrapped_lines(term_dims.rows / 2)
-        elif user_input == ord('u'):
-            file_iter.seek_prev_wrapped_lines(term_dims.rows / 2)
-        elif user_input == ord('f'):
-            file_iter.seek_next_wrapped_lines(term_dims.rows)
-        elif user_input == ord('b'):
-            file_iter.seek_prev_wrapped_lines(term_dims.rows)
-        elif user_input == ord('g'):
-            file_iter.seek_to_start_of_file()
-        elif user_input == ord('G'):
-            file_iter.seek_to_last_page()
-        elif user_input == ord('H'):
-            file_iter.seek_to_percentage_of_file(0.25)
-        elif user_input == ord('M'):
-            file_iter.seek_to_percentage_of_file(0.50)
-        elif user_input == ord('L'):
-            file_iter.seek_to_percentage_of_file(0.75)
-        elif user_input == ord('F'):
-            tail_mode.run()
-        elif user_input == ord('/'):
-            search_mode.run('/')
-        elif user_input == ord('?'):
-            search_mode.run('?')
-        elif user_input == ord('n'):
-            search_mode.continue_search()
-        elif user_input == ord('N'):
-            search_mode.continue_reverse_search()
+            pass
 
 
 def run(args):
