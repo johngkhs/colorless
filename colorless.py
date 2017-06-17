@@ -362,36 +362,48 @@ def run_curses(screen, input_file, config_filepath):
     file_iter = FileIterator(input_file, term_dims)
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
-    input_to_action = {ord(key): action for (key, action) in {
-        'j': lambda: file_iter.seek_next_wrapped_lines(1),
-        'k': lambda: file_iter.seek_prev_wrapped_lines(1),
-        'd': lambda: file_iter.seek_next_wrapped_lines(term_dims.rows / 2),
-        'u': lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows / 2),
-        'f': lambda: file_iter.seek_next_wrapped_lines(term_dims.rows),
-        'b': lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
-        'g': lambda: file_iter.seek_to_start_of_file(),
-        'G': lambda: file_iter.seek_to_last_page(),
-        'H': lambda: file_iter.seek_to_percentage_of_file(0.25),
-        'M': lambda: file_iter.seek_to_percentage_of_file(0.50),
-        'L': lambda: file_iter.seek_to_percentage_of_file(0.75),
-        'F': lambda: tail_mode.run(),
-        '/': lambda: search_mode.run('/'),
-        '?': lambda: search_mode.run('?'),
-        'n': lambda: search_mode.continue_search(),
-        'N': lambda: search_mode.continue_reverse_search(),
-        'q': lambda: sys.exit(os.EX_OK)
-    }.items()}
-
     while True:
         redraw_screen(screen, term_dims, regex_to_color, file_iter, ':')
         try:
             user_input = screen.getch()
         except KeyboardInterrupt:
             continue
-        if user_input == curses.KEY_RESIZE:
+        if user_input == ord('q'):
+            return os.EX_OK
+        elif user_input == curses.KEY_RESIZE:
             term_dims.update(screen)
-        elif user_input in input_to_action:
-            input_to_action[user_input]()
+        elif user_input == ord('j'):
+            file_iter.seek_next_wrapped_lines(1)
+        elif user_input == ord('k'):
+            file_iter.seek_prev_wrapped_lines(1)
+        elif user_input == ord('d'):
+            file_iter.seek_next_wrapped_lines(term_dims.rows / 2)
+        elif user_input == ord('u'):
+            file_iter.seek_prev_wrapped_lines(term_dims.rows / 2)
+        elif user_input == ord('f'):
+            file_iter.seek_next_wrapped_lines(term_dims.rows)
+        elif user_input == ord('b'):
+            file_iter.seek_prev_wrapped_lines(term_dims.rows)
+        elif user_input == ord('g'):
+            file_iter.seek_to_start_of_file()
+        elif user_input == ord('G'):
+            file_iter.seek_to_last_page()
+        elif user_input == ord('H'):
+            file_iter.seek_to_percentage_of_file(0.25)
+        elif user_input == ord('M'):
+            file_iter.seek_to_percentage_of_file(0.50)
+        elif user_input == ord('L'):
+            file_iter.seek_to_percentage_of_file(0.75)
+        elif user_input == ord('F'):
+            tail_mode.run()
+        elif user_input == ord('/'):
+            search_mode.run('/')
+        elif user_input == ord('?'):
+            search_mode.run('?')
+        elif user_input == ord('n'):
+            search_mode.continue_search()
+        elif user_input == ord('N'):
+            search_mode.continue_reverse_search()
 
 
 def run(args):
@@ -434,10 +446,7 @@ def run(args):
 
 def main():
     signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
-    try:
-        exit_code = run(sys.argv[1:])
-    except KeyboardInterrupt:
-        sys.exit(os.EX_OK)
+    exit_code = run(sys.argv[1:])
     sys.exit(exit_code)
 
 
