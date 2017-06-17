@@ -19,21 +19,6 @@ class TerminalDimensions:
         self.rows = term_dimensions[0] - 1
         self.cols = term_dimensions[1]
 
-class SearchHistoryIterator:
-    def __init__(self, queries):
-        self.index = 0
-        self.queries = queries
-
-    def next(self):
-        return self.__iter_by(1)
-
-    def prev(self):
-        return self.__iter_by(-1)
-
-    def __iter_by(self, count):
-        self.index = max(0, min(self.index + count, len(self.queries) - 1))
-        return self.queries[self.index]
-
 class SearchHistory:
     def __init__(self):
         self.last_query = None
@@ -54,8 +39,8 @@ class SearchHistory:
     def get_last_query(self):
         return self.last_query
 
-    def to_iterator(self):
-        return SearchHistoryIterator([''] + self.queries)
+    def to_list(self):
+        return [''] + self.queries
 
     def __write_search_history_to_file(self):
         with open(self.filepath, 'w') as search_history_file:
@@ -143,7 +128,7 @@ class FileIterator:
         self.seek_to_last_page()
         self.input_file.seek(min(position, input_file.tell()))
 
-    def seek_next_wrapped_lines_and_clamp_position(self, count):
+    def seek_next_wrapped_lines(self, count):
         self.__seek_next_wrapped_lines(count)
         self.clamp_position_to_last_page()
 
@@ -294,29 +279,35 @@ class SearchMode:
         self.continue_search()
 
     def __wait_for_user_input(self):
-        search_query = ''
-        search_history_iter = self.search_history.to_iterator()
+        search_prefix = ''
+        search_suffix = ''
+        search_history_list = self.search_history.to_list()
+        search_history_index = 0
         KEY_DELETE = 127
-        input_to_search_query = {
-            KEY_DELETE : lambda: search_query[:-1],
-            curses.KEY_BACKSPACE : lambda: search_query[:-1],
-            curses.KEY_UP : lambda: search_history_iter.next(),
-            curses.KEY_DOWN : lambda: search_history_iter.prev()
-        }
-
         while True:
             user_input = self.screen.getch()
-            if user_input in input_to_search_query:
-                search_query = input_to_search_query[user_input]()
+            if user_input == ord('\n'):
+                break
+            elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
+                search_prefix = search_prefix[:-1]
             elif 0 <= user_input <= 255:
-                if chr(user_input) == '\n':
-                    break
-                search_query += chr(user_input)
+                search_prefix += chr(user_input)
+            elif user_input == curses.KEY_LEFT and len(search_prefix) > 0:
+                search_prefix, search_suffix = search_prefix[:-1], search_prefix[-1] + search_suffix
+            elif user_input == curses.KEY_RIGHT and len(search_suffix) > 0:
+                search_prefix, search_suffix = search_prefix + search_suffix[0], search_suffix[1:]
+            elif user_input == curses.KEY_UP and search_history_index < len(search_history_list) - 1:
+                search_history_index += 1
+                search_prefix, search_suffix = search_history_list[search_history_index], ''
+            elif user_input == curses.KEY_DOWN and search_history_index > 0:
+                search_history_index -= 1
+                search_prefix, search_suffix = search_history_list[search_history_index], ''
             self.screen.move(self.term_dims.rows, 1)
             self.screen.clrtoeol()
-            self.screen.addstr(self.term_dims.rows, 1, search_query)
+            self.screen.addstr(self.term_dims.rows, 1, search_prefix + search_suffix)
+            self.screen.move(self.term_dims.rows, len(search_prefix) + 1)
             self.screen.refresh()
-        return search_query
+        return search_prefix + search_suffix
 
 def wrap(line, cols):
     return [line[i:i + cols] for i in range(0, len(line), cols)]
@@ -351,6 +342,8 @@ def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
 
 def main(screen, input_file, config_filepath):
     curses.use_default_colors()
+    VERY_VISIBLE = 2
+    curses.curs_set(VERY_VISIBLE)
     search_history = SearchHistory()
     regex_to_color = RegexToColor(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
@@ -358,11 +351,11 @@ def main(screen, input_file, config_filepath):
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
     input_to_action = {ord(key): action for (key, action) in {
-        'j' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(1),
+        'j' : lambda: file_iter.seek_next_wrapped_lines(1),
         'k' : lambda: file_iter.seek_prev_wrapped_lines(1),
-        'd' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(term_dims.rows / 2),
+        'd' : lambda: file_iter.seek_next_wrapped_lines(term_dims.rows / 2),
         'u' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows / 2),
-        'f' : lambda: file_iter.seek_next_wrapped_lines_and_clamp_position(term_dims.rows),
+        'f' : lambda: file_iter.seek_next_wrapped_lines(term_dims.rows),
         'b' : lambda: file_iter.seek_prev_wrapped_lines(term_dims.rows),
         'g' : lambda: file_iter.seek_to_start_of_file(),
         'G' : lambda: file_iter.seek_to_last_page(),
