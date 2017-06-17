@@ -6,6 +6,7 @@ import curses
 import itertools
 import os
 import re
+import signal
 import sys
 import time
 
@@ -388,6 +389,7 @@ def main(screen, input_file, config_filepath):
             input_to_action[user_input]()
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
     description = 'A less-like pager utility with regex highlighting capabilities'
     epilog = '\n'.join(['Available commands:', 'j: move down one line', 'k: move up one line', 'd: move down half a page', 'u: move up half a page',
         'f: move down a page', 'b: move up a page', 'g: go to beginning of file', 'G: go to end of file', 'H: go to 25% of file', 'M: go to 50% of file',
