@@ -115,6 +115,14 @@ class FileIterator:
             elif len(lines) == 1:
                 CHUNK_SIZE *= 2
 
+    def next_line_iterator(self):
+        while True:
+            line = self._read_next_line()
+            if not line:
+                yield ''
+                return
+            yield line
+
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
         file_size_in_bytes = self.peek_file_size_in_bytes()
@@ -122,8 +130,14 @@ class FileIterator:
         next(self.prev_line_iterator())
         self.clamp_position_to_last_page()
 
+    def tell(self):
+        return self.input_file.tell()
+
+    def seek(self, position):
+        self.input_file.seek(position, os.SEEK_SET)
+
     def seek_to_start_of_file(self):
-        self.input_file.seek(0, os.SEEK_SET)
+        self.seek(0)
 
     def seek_prev_wrapped_lines(self, count):
         for _ in range(count):
@@ -141,42 +155,6 @@ class FileIterator:
     def seek_next_wrapped_lines(self, count):
         self._seek_next_wrapped_lines(count)
         self.clamp_position_to_last_page()
-
-    def search_forwards(self, search_regex):
-        position = self.input_file.tell()
-        try:
-            self._search_forwards(search_regex)
-        except KeyboardInterrupt:
-            self.input_file.seek(position)
-
-    def search_backwards(self, search_regex):
-        position = self.input_file.tell()
-        try:
-            self._search_backwards(search_regex)
-        except KeyboardInterrupt:
-            self.input_file.seek(position)
-
-    def _search_forwards(self, search_regex):
-        position = self.input_file.tell()
-        line = self._read_next_line()
-        while True:
-            line = self._read_next_line()
-            if not line:
-                self.input_file.seek(position)
-                return
-            elif search_regex.search(line):
-                next(self.prev_line_iterator())
-                self.clamp_position_to_last_page()
-                return
-
-    def _search_backwards(self, search_regex):
-        position = self.input_file.tell()
-        for line in self.prev_line_iterator():
-            if not line:
-                self.input_file.seek(position)
-                return
-            elif search_regex.search(line):
-                return
 
     def _read_next_line(self):
         return self.input_file.readline()
@@ -294,12 +272,47 @@ class SearchMode:
         write_search_queries_to_search_history_file(self.search_history.get_search_queries())
         search_regex = self.search_history.get_last_search_query_as_regex()
         if input_key == '/':
-            self.continue_search = lambda: self.file_iter.search_forwards(search_regex)
-            self.continue_reverse_search = lambda: self.file_iter.search_backwards(search_regex)
+            self.continue_search = lambda: self.search_forwards(search_regex)
+            self.continue_reverse_search = lambda: self.search_backwards(search_regex)
         else:
-            self.continue_search = lambda: self.file_iter.search_backwards(search_regex)
-            self.continue_reverse_search = lambda: self.file_iter.search_forwards(search_regex)
+            self.continue_search = lambda: self.search_backwards(search_regex)
+            self.continue_reverse_search = lambda: self.search_forwards(search_regex)
         self.continue_search()
+
+    def search_forwards(self, search_regex):
+        position = self.file_iter.tell()
+        try:
+            self._search_forwards(search_regex)
+        except KeyboardInterrupt:
+            self.file_iter.seek(position)
+
+    def search_backwards(self, search_regex):
+        position = self.file_iter.tell()
+        try:
+            self._search_backwards(search_regex)
+        except KeyboardInterrupt:
+            self.file_iter.seek(position)
+
+    def _search_forwards(self, search_regex):
+        position = self.file_iter.tell()
+        next(self.file_iter.next_line_iterator())
+        for line in self.file_iter.next_line_iterator():
+            if not line:
+                self.file_iter.seek(position)
+                return
+            if search_regex.search(line):
+                next(self.file_iter.prev_line_iterator())
+                self.file_iter.clamp_position_to_last_page()
+                return
+
+    def _search_backwards(self, search_regex):
+        position = self.file_iter.tell()
+        for line in self.file_iter.prev_line_iterator():
+            if not line:
+                self.file_iter.seek(position)
+                return
+            elif search_regex.search(line):
+                return
 
     def _wait_for_user_to_input_search_query(self):
         search_prefix = ''
