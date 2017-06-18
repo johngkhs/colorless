@@ -226,7 +226,7 @@ class TailMode:
         self.file_iter = file_iter
         self.regex_to_color = regex_to_color
 
-    def run(self):
+    def start_tailing(self):
         try:
             self.screen.nodelay(1)
             curses.curs_set(0)
@@ -259,16 +259,14 @@ class SearchMode:
         self.search_history = search_history
         self.last_search_direction_char = None
 
-    def run(self, search_direction_char):
+    def start_new_search(self, search_direction_char):
+        self.screen.addstr(self.term_dims.rows, 0, search_direction_char)
+        search_query = None
         try:
-            self.screen.addstr(self.term_dims.rows, 0, search_direction_char)
-            curses.echo()
             search_query = self._wait_for_user_to_input_search_query()
         except KeyboardInterrupt:
-            return
-        finally:
-            curses.noecho()
-            self.screen.erase()
+            pass
+        self.screen.erase()
         if not search_query:
             return
         self.search_history.insert_search_query(search_query)
@@ -435,11 +433,11 @@ def run_curses(screen, input_file, config_filepath):
             elif user_input == ord('L'):
                 file_iter.seek_to_percentage_of_file(0.75)
             elif user_input == ord('F'):
-                tail_mode.run()
+                tail_mode.start_tailing()
             elif user_input == ord(SEARCH_FORWARDS_CHAR):
-                search_mode.run(SEARCH_FORWARDS_CHAR)
+                search_mode.start_new_search(SEARCH_FORWARDS_CHAR)
             elif user_input == ord(SEARCH_BACKWARDS_CHAR):
-                search_mode.run(SEARCH_BACKWARDS_CHAR)
+                search_mode.start_new_search(SEARCH_BACKWARDS_CHAR)
             elif user_input == ord('n'):
                 search_mode.continue_search()
             elif user_input == ord('N'):
