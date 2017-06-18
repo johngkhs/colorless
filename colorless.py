@@ -25,15 +25,25 @@ def get_search_history_filepath():
     return os.path.join(os.path.expanduser('~'), '.colorless_search_history')
 
 
-def load_search_queries_from_history_file():
-    with open(get_search_history_filepath(), 'a+') as search_history_file:
-        search_history_file.seek(0)
-        return [line.rstrip('\n') for line in search_history_file.readlines()]
+def load_search_queries_from_search_history_file():
+    try:
+        search_history_file = open(get_search_history_filepath(), 'a+')
+    except EnvironmentError:
+        return []
+    else:
+        with search_history_file:
+            search_history_file.seek(0)
+            return [line.rstrip('\n') for line in search_history_file.readlines()]
 
 
-def write_search_queries_to_history_file(search_queries):
-    with open(get_search_history_filepath(), 'w') as search_history_file:
-        search_history_file.writelines(s + '\n' for s in search_queries)
+def write_search_queries_to_search_history_file(search_queries):
+    try:
+        search_history_file = open(get_search_history_filepath(), 'w')
+    except EnvironmentError:
+        pass
+    else:
+        with search_history_file:
+            search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
 def to_smartcase_regex(text):
@@ -280,7 +290,7 @@ class SearchMode:
         if not search_query:
             return
         self.search_history.insert_search_query(search_query)
-        write_search_queries_to_history_file(self.search_history.get_search_queries())
+        write_search_queries_to_search_history_file(self.search_history.get_search_queries())
         search_regex = self.search_history.get_last_search_query_as_regex()
         if input_key == '/':
             self.continue_search = lambda: self.file_iter.search_forwards(search_regex)
@@ -361,7 +371,7 @@ def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
-    search_queries = load_search_queries_from_history_file()
+    search_queries = load_search_queries_from_search_history_file()
     search_history = SearchHistory(search_queries)
     regex_to_color = RegexToColor(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
@@ -440,7 +450,7 @@ def run(args):
         return os.EX_USAGE
     args = arg_parser.parse_args()
     try:
-        input_file = open(args.filepath)
+        input_file = open(args.filepath, 'r')
     except EnvironmentError:
         sys.stderr.write('{}: No such file or directory'.format(args.filepath))
         return os.EX_NOINPUT
