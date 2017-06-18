@@ -85,6 +85,13 @@ class FileIterator:
         self.input_file.seek(position)
         return lines
 
+    def peek_file_size_in_bytes(self):
+        position = self.input_file.tell()
+        self._seek_to_end_of_file()
+        file_size_in_bytes = self.input_file.tell()
+        self.input_file.seek(position)
+        return file_size_in_bytes
+
     def prev_line_iterator(self):
         if self.input_file.tell() == 0:
             yield ''
@@ -108,16 +115,9 @@ class FileIterator:
             elif len(lines) == 1:
                 CHUNK_SIZE *= 2
 
-    def get_file_size_in_bytes(self):
-        position = self.input_file.tell()
-        self._seek_to_end_of_file()
-        file_size_in_bytes = self.input_file.tell()
-        self.input_file.seek(position)
-        return file_size_in_bytes
-
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
-        file_size_in_bytes = self.get_file_size_in_bytes()
+        file_size_in_bytes = self.peek_file_size_in_bytes()
         self.input_file.seek(percentage * file_size_in_bytes)
         next(self.prev_line_iterator())
         self.clamp_position_to_last_page()
@@ -125,15 +125,9 @@ class FileIterator:
     def seek_to_start_of_file(self):
         self.input_file.seek(0, os.SEEK_SET)
 
-    def seek_prev_wrapped_line(self):
-        line = next(self.prev_line_iterator())
-        wrapped_lines = wrap(line, self.term_dims.cols)
-        for wrapped_line in wrapped_lines[:-1]:
-            self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
-
     def seek_prev_wrapped_lines(self, count):
-        for i in range(count):
-            self.seek_prev_wrapped_line()
+        for _ in range(count):
+            self._seek_prev_wrapped_line()
 
     def seek_to_last_page(self):
         self._seek_to_end_of_file()
@@ -193,8 +187,14 @@ class FileIterator:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
     def _seek_next_wrapped_lines(self, count):
-        for i in range(count):
+        for _ in range(count):
             self._seek_next_wrapped_line()
+
+    def _seek_prev_wrapped_line(self):
+        line = next(self.prev_line_iterator())
+        wrapped_lines = wrap(line, self.term_dims.cols)
+        for wrapped_line in wrapped_lines[:-1]:
+            self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
 
     def _seek_to_end_of_file(self):
         self.input_file.seek(0, os.SEEK_END)
@@ -249,9 +249,9 @@ class TailMode:
             self.screen.nodelay(1)
             curses.curs_set(0)
             while True:
-                file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
+                file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
                 self._redraw_last_page()
-                while file_size_in_bytes == self.file_iter.get_file_size_in_bytes():
+                while file_size_in_bytes == self.file_iter.peek_file_size_in_bytes():
                     time.sleep(0.1)
         except KeyboardInterrupt:
             pass
