@@ -21,42 +21,47 @@ class TerminalDimensions:
         self.cols = term_dimensions[1]
 
 
+def get_search_history_filepath():
+    return os.path.join(os.path.expanduser('~'), '.colorless_search_history')
+
+
+def load_search_queries_from_history_file():
+    with open(get_search_history_filepath(), 'a+') as search_history_file:
+        search_history_file.seek(0)
+        return [line.rstrip('\n') for line in search_history_file.readlines()]
+
+
+def write_search_queries_to_history_file(search_queries):
+    with open(get_search_history_filepath(), 'w') as search_history_file:
+        search_history_file.writelines(s + '\n' for s in search_queries)
+
+
+def to_smartcase_regex(text):
+    if text.islower():
+        return re.compile(r'({0})'.format(text), re.IGNORECASE)
+    return re.compile(r'({0})'.format(text))
+
+
 class SearchHistory:
-    def __init__(self):
-        self.last_query = None
-        self.filepath = os.path.join(os.path.expanduser('~'), '.colorless_search_history')
-        self.__load_search_history_from_file()
+    def __init__(self, search_queries):
+        UNMATCHABLE_REGEX = re.compile('a^')
+        self.last_search_query_as_regex = UNMATCHABLE_REGEX
+        self.search_queries = search_queries
 
-    def add(self, query):
-        self.last_query = query
-        self.queries.insert(0, query)
-        MAX_QUERIES = 50
-        self.queries = list(collections.OrderedDict.fromkeys(self.queries))[:MAX_QUERIES]
-        self.__write_search_history_to_file()
+    def get_last_search_query_as_regex(self):
+        return self.last_search_query_as_regex
 
-    def get_last_query_as_regex(self):
-        assert self.last_query
-        return self.__to_smartcase_regex(self.last_query)
+    def get_search_queries(self):
+        return self.search_queries
 
-    def get_last_query(self):
-        return self.last_query
+    def insert_search_query(self, search_query):
+        self.last_search_query_as_regex = to_smartcase_regex(search_query)
+        self.search_queries.insert(0, search_query)
+        self.__filter_duplicate_search_queries()
 
-    def to_list(self):
-        return [''] + self.queries
-
-    def __write_search_history_to_file(self):
-        with open(self.filepath, 'w') as search_history_file:
-            search_history_file.writelines(s + '\n' for s in self.queries)
-
-    def __load_search_history_from_file(self):
-        with open(self.filepath, 'a+') as search_history_file:
-            search_history_file.seek(0)
-            self.queries = [line.rstrip('\n') for line in search_history_file.readlines()]
-
-    def __to_smartcase_regex(self, search_query):
-        if search_query.islower():
-            return re.compile(r'({0})'.format(search_query), re.IGNORECASE)
-        return re.compile(r'({0})'.format(search_query))
+    def __filter_duplicate_search_queries(self):
+        MAX_SEARCH_QUERIES = 100
+        self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
 
 
 class FileIterator:
@@ -217,8 +222,7 @@ class RegexToColor:
 
     def __items(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
-        if self.search_history.get_last_query():
-            regex_to_color[self.search_history.get_last_query_as_regex()] = self.SEARCH_COLOR
+        regex_to_color[self.search_history.get_last_search_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
 
 
@@ -267,7 +271,7 @@ class SearchMode:
         try:
             self.screen.addstr(self.term_dims.rows, 0, input_key)
             curses.echo()
-            search_query = self.__wait_for_user_input()
+            search_query = self.__wait_for_user_to_input_search_query()
         except KeyboardInterrupt:
             return
         finally:
@@ -275,8 +279,9 @@ class SearchMode:
             self.screen.erase()
         if not search_query:
             return
-        self.search_history.add(search_query)
-        search_regex = self.search_history.get_last_query_as_regex()
+        self.search_history.insert_search_query(search_query)
+        write_search_queries_to_history_file(self.search_history.get_search_queries())
+        search_regex = self.search_history.get_last_search_query_as_regex()
         if input_key == '/':
             self.continue_search = lambda: self.file_iter.search_forwards(search_regex)
             self.continue_reverse_search = lambda: self.file_iter.search_backwards(search_regex)
@@ -285,11 +290,11 @@ class SearchMode:
             self.continue_reverse_search = lambda: self.file_iter.search_forwards(search_regex)
         self.continue_search()
 
-    def __wait_for_user_input(self):
+    def __wait_for_user_to_input_search_query(self):
         search_prefix = ''
         search_suffix = ''
-        search_history_list = self.search_history.to_list()
-        search_history_index = 0
+        search_queries = self.search_history.get_search_queries()
+        search_history_index = -1
         KEY_DELETE = 127
         while True:
             user_input = self.screen.getch()
@@ -303,12 +308,12 @@ class SearchMode:
                 search_prefix, search_suffix = search_prefix[:-1], search_prefix[-1] + search_suffix
             elif user_input == curses.KEY_RIGHT and len(search_suffix) > 0:
                 search_prefix, search_suffix = search_prefix + search_suffix[0], search_suffix[1:]
-            elif user_input == curses.KEY_UP and search_history_index < len(search_history_list) - 1:
+            elif user_input == curses.KEY_UP and search_history_index < len(search_queries) - 1:
                 search_history_index += 1
-                search_prefix, search_suffix = search_history_list[search_history_index], ''
+                search_prefix, search_suffix = search_queries[search_history_index], ''
             elif user_input == curses.KEY_DOWN and search_history_index > 0:
                 search_history_index -= 1
-                search_prefix, search_suffix = search_history_list[search_history_index], ''
+                search_prefix, search_suffix = search_queries[search_history_index], ''
             self.screen.move(self.term_dims.rows, 1)
             self.screen.clrtoeol()
             self.screen.addstr(self.term_dims.rows, 1, search_prefix + search_suffix)
@@ -356,7 +361,8 @@ def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
-    search_history = SearchHistory()
+    search_queries = load_search_queries_from_history_file()
+    search_history = SearchHistory(search_queries)
     regex_to_color = RegexToColor(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
