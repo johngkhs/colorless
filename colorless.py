@@ -67,9 +67,9 @@ class SearchHistory:
     def insert_search_query(self, search_query):
         self.last_search_query_as_regex = to_smartcase_regex(search_query)
         self.search_queries.insert(0, search_query)
-        self.__filter_duplicate_search_queries()
+        self._filter_duplicate_search_queries()
 
-    def __filter_duplicate_search_queries(self):
+    def _filter_duplicate_search_queries(self):
         MAX_SEARCH_QUERIES = 100
         self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
 
@@ -78,6 +78,12 @@ class FileIterator:
     def __init__(self, input_file, term_dims):
         self.input_file = input_file
         self.term_dims = term_dims
+
+    def peek_next_lines(self, count):
+        position = self.input_file.tell()
+        lines = [self._read_next_line() for _ in range(count)]
+        self.input_file.seek(position)
+        return lines
 
     def prev_line_iterator(self):
         if self.input_file.tell() == 0:
@@ -102,18 +108,9 @@ class FileIterator:
             elif len(lines) == 1:
                 CHUNK_SIZE *= 2
 
-    def retrieve_next_lines(self, count):
-        position = self.input_file.tell()
-        lines = [self.next_line() for _ in range(count)]
-        self.input_file.seek(position)
-        return lines
-
-    def next_line(self):
-        return self.input_file.readline()
-
     def get_file_size_in_bytes(self):
         position = self.input_file.tell()
-        self.__seek_to_end_of_file()
+        self._seek_to_end_of_file()
         file_size_in_bytes = self.input_file.tell()
         self.input_file.seek(position)
         return file_size_in_bytes
@@ -139,7 +136,7 @@ class FileIterator:
             self.seek_prev_wrapped_line()
 
     def seek_to_last_page(self):
-        self.__seek_to_end_of_file()
+        self._seek_to_end_of_file()
         self.seek_prev_wrapped_lines(self.term_dims.rows)
 
     def clamp_position_to_last_page(self):
@@ -148,28 +145,28 @@ class FileIterator:
         self.input_file.seek(min(position, self.input_file.tell()))
 
     def seek_next_wrapped_lines(self, count):
-        self.__seek_next_wrapped_lines(count)
+        self._seek_next_wrapped_lines(count)
         self.clamp_position_to_last_page()
 
     def search_forwards(self, search_regex):
         position = self.input_file.tell()
         try:
-            self.__search_forwards(search_regex)
+            self._search_forwards(search_regex)
         except KeyboardInterrupt:
             self.input_file.seek(position)
 
     def search_backwards(self, search_regex):
         position = self.input_file.tell()
         try:
-            self.__search_backwards(search_regex)
+            self._search_backwards(search_regex)
         except KeyboardInterrupt:
             self.input_file.seek(position)
 
-    def __search_forwards(self, search_regex):
+    def _search_forwards(self, search_regex):
         position = self.input_file.tell()
-        line = self.next_line()
+        line = self._read_next_line()
         while True:
-            line = self.next_line()
+            line = self._read_next_line()
             if not line:
                 self.input_file.seek(position)
                 return
@@ -178,7 +175,7 @@ class FileIterator:
                 self.clamp_position_to_last_page()
                 return
 
-    def __search_backwards(self, search_regex):
+    def _search_backwards(self, search_regex):
         position = self.input_file.tell()
         for line in self.prev_line_iterator():
             if not line:
@@ -187,16 +184,19 @@ class FileIterator:
             elif search_regex.search(line):
                 return
 
-    def __seek_next_wrapped_line(self):
-        line = self.next_line()
+    def _read_next_line(self):
+        return self.input_file.readline()
+
+    def _seek_next_wrapped_line(self):
+        line = self._read_next_line()
         if len(line) > self.term_dims.cols:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
-    def __seek_next_wrapped_lines(self, count):
+    def _seek_next_wrapped_lines(self, count):
         for i in range(count):
-            self.__seek_next_wrapped_line()
+            self._seek_next_wrapped_line()
 
-    def __seek_to_end_of_file(self):
+    def _seek_to_end_of_file(self):
         self.input_file.seek(0, os.SEEK_END)
 
 
@@ -207,11 +207,11 @@ class RegexToColor:
         self.SEARCH_COLOR = 255
         curses.init_pair(self.SEARCH_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
         if config_filepath:
-            self.__load_config(config_filepath)
+            self._load_config(config_filepath)
 
     def to_colored_line(self, line):
         colored_line = [0] * len(line)
-        for regex, color in self.__items():
+        for regex, color in self._items():
             tokens = regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
@@ -221,7 +221,7 @@ class RegexToColor:
                 col += len(token)
         return colored_line
 
-    def __load_config(self, config_filepath):
+    def _load_config(self, config_filepath):
         config = {}
         execfile(config_filepath, config)
         assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
@@ -231,7 +231,7 @@ class RegexToColor:
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
 
-    def __items(self):
+    def _items(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
         regex_to_color[self.search_history.get_last_search_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
@@ -250,7 +250,7 @@ class TailMode:
             curses.curs_set(0)
             while True:
                 file_size_in_bytes = self.file_iter.get_file_size_in_bytes()
-                self.__redraw_last_page()
+                self._redraw_last_page()
                 while file_size_in_bytes == self.file_iter.get_file_size_in_bytes():
                     time.sleep(0.1)
         except KeyboardInterrupt:
@@ -261,7 +261,7 @@ class TailMode:
         self.term_dims.update(self.screen)
         self.file_iter.seek_to_last_page()
 
-    def __redraw_last_page(self):
+    def _redraw_last_page(self):
         if self.screen.getch() == curses.KEY_RESIZE:
             self.term_dims.update(screen)
         self.file_iter.seek_to_last_page()
@@ -282,7 +282,7 @@ class SearchMode:
         try:
             self.screen.addstr(self.term_dims.rows, 0, input_key)
             curses.echo()
-            search_query = self.__wait_for_user_to_input_search_query()
+            search_query = self._wait_for_user_to_input_search_query()
         except KeyboardInterrupt:
             return
         finally:
@@ -301,7 +301,7 @@ class SearchMode:
             self.continue_reverse_search = lambda: self.file_iter.search_forwards(search_regex)
         self.continue_search()
 
-    def __wait_for_user_to_input_search_query(self):
+    def _wait_for_user_to_input_search_query(self):
         search_prefix = ''
         search_suffix = ''
         search_queries = self.search_history.get_search_queries()
@@ -352,7 +352,7 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
 def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.move(0, 0)
     row = 0
-    for line in file_iter.retrieve_next_lines(term_dims.rows):
+    for line in file_iter.peek_next_lines(term_dims.rows):
         if not line or row == term_dims.rows:
             break
         colored_line = regex_to_color.to_colored_line(line)
