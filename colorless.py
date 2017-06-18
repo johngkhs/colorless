@@ -11,6 +11,10 @@ import sys
 import time
 
 
+SEARCH_FORWARDS_CHAR = '/'
+SEARCH_BACKWARDS_CHAR = '?'
+
+
 class TerminalDimensions:
     def __init__(self, screen):
         self.update(screen)
@@ -81,7 +85,7 @@ class FileIterator:
 
     def peek_next_lines(self, count):
         position = self.input_file.tell()
-        lines = [self._read_next_line() for _ in range(count)]
+        lines = [self.read_next_line() for _ in range(count)]
         self.input_file.seek(position)
         return lines
 
@@ -117,11 +121,14 @@ class FileIterator:
 
     def next_line_iterator(self):
         while True:
-            line = self._read_next_line()
+            line = self.read_next_line()
             if not line:
                 yield ''
                 return
             yield line
+
+    def read_next_line(self):
+        return self.input_file.readline()
 
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
@@ -156,11 +163,8 @@ class FileIterator:
         self._seek_next_wrapped_lines(count)
         self.clamp_position_to_last_page()
 
-    def _read_next_line(self):
-        return self.input_file.readline()
-
     def _seek_next_wrapped_line(self):
-        line = self._read_next_line()
+        line = self.read_next_line()
         if len(line) > self.term_dims.cols:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
@@ -253,12 +257,11 @@ class SearchMode:
         self.term_dims = term_dims
         self.file_iter = file_iter
         self.search_history = search_history
-        self.continue_search = lambda: None
-        self.continue_reverse_search = lambda: None
+        self.last_search_direction_char = None
 
-    def run(self, input_key):
+    def run(self, search_direction_char):
         try:
-            self.screen.addstr(self.term_dims.rows, 0, input_key)
+            self.screen.addstr(self.term_dims.rows, 0, search_direction_char)
             curses.echo()
             search_query = self._wait_for_user_to_input_search_query()
         except KeyboardInterrupt:
@@ -270,49 +273,58 @@ class SearchMode:
             return
         self.search_history.insert_search_query(search_query)
         write_search_queries_to_search_history_file(self.search_history.get_search_queries())
-        search_regex = self.search_history.get_last_search_query_as_regex()
-        if input_key == '/':
-            self.continue_search = lambda: self.search_forwards(search_regex)
-            self.continue_reverse_search = lambda: self.search_backwards(search_regex)
-        else:
-            self.continue_search = lambda: self.search_backwards(search_regex)
-            self.continue_reverse_search = lambda: self.search_forwards(search_regex)
+        self.last_search_direction_char = search_direction_char
         self.continue_search()
 
-    def search_forwards(self, search_regex):
+    def continue_search(self):
+        self._search_with_interrupt_handling(self._continue_search)
+
+    def continue_reverse_search(self):
+        self._search_with_interrupt_handling(self._continue_reverse_search)
+
+    def _search_with_interrupt_handling(self, search_function):
         position = self.file_iter.tell()
         try:
-            self._search_forwards(search_regex)
+            search_succeeded = search_function()
+            if not search_succeeded:
+                self.file_iter.seek(position)
         except KeyboardInterrupt:
             self.file_iter.seek(position)
 
-    def search_backwards(self, search_regex):
-        position = self.file_iter.tell()
-        try:
-            self._search_backwards(search_regex)
-        except KeyboardInterrupt:
-            self.file_iter.seek(position)
+    def _continue_search(self):
+        if self.last_search_direction_char == SEARCH_FORWARDS_CHAR:
+            return self._search_forwards()
+        elif self.last_search_direction_char == SEARCH_BACKWARDS_CHAR:
+            return self._search_backwards()
+        else:
+            return False
 
-    def _search_forwards(self, search_regex):
-        position = self.file_iter.tell()
-        next(self.file_iter.next_line_iterator())
+    def _continue_reverse_search(self):
+        if self.last_search_direction_char == SEARCH_FORWARDS_CHAR:
+            return self._search_backwards()
+        elif self.last_search_direction_char == SEARCH_BACKWARDS_CHAR:
+            return self._search_forwards()
+        else:
+            return False
+
+    def _search_forwards(self):
+        search_query_regex = self.search_history.get_last_search_query_as_regex()
+        self.file_iter.read_next_line()
         for line in self.file_iter.next_line_iterator():
             if not line:
-                self.file_iter.seek(position)
-                return
-            if search_regex.search(line):
+                return False
+            elif search_query_regex.search(line):
                 next(self.file_iter.prev_line_iterator())
                 self.file_iter.clamp_position_to_last_page()
-                return
+                return True
 
-    def _search_backwards(self, search_regex):
-        position = self.file_iter.tell()
+    def _search_backwards(self):
+        search_query_regex = self.search_history.get_last_search_query_as_regex()
         for line in self.file_iter.prev_line_iterator():
             if not line:
-                self.file_iter.seek(position)
-                return
-            elif search_regex.search(line):
-                return
+                return False
+            elif search_query_regex.search(line):
+                return True
 
     def _wait_for_user_to_input_search_query(self):
         search_prefix = ''
@@ -424,10 +436,10 @@ def run_curses(screen, input_file, config_filepath):
                 file_iter.seek_to_percentage_of_file(0.75)
             elif user_input == ord('F'):
                 tail_mode.run()
-            elif user_input == ord('/'):
-                search_mode.run('/')
-            elif user_input == ord('?'):
-                search_mode.run('?')
+            elif user_input == ord(SEARCH_FORWARDS_CHAR):
+                search_mode.run(SEARCH_FORWARDS_CHAR)
+            elif user_input == ord(SEARCH_BACKWARDS_CHAR):
+                search_mode.run(SEARCH_BACKWARDS_CHAR)
             elif user_input == ord('n'):
                 search_mode.continue_search()
             elif user_input == ord('N'):
