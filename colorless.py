@@ -236,7 +236,7 @@ class TailMode:
                 file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
                 self._redraw_last_page()
                 while file_size_in_bytes == self.file_iter.peek_file_size_in_bytes():
-                    time.sleep(0.1)
+                    time.sleep(0.01)
         except KeyboardInterrupt:
             pass
         self.screen.erase()
