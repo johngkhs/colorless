@@ -375,9 +375,11 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
 def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
     screen.move(0, 0)
     row = 0
+    screen.erase()
     for line in file_iter.peek_next_lines(term_dims.rows):
         if not line or row == term_dims.rows:
             break
+        line = line.rstrip('\n').encode('string_escape')
         colored_line = regex_to_color.to_colored_line(line)
         wrapped_lines = wrap(line, term_dims.cols)
         wrapped_colored_lines = wrap(colored_line, term_dims.cols)
