@@ -206,12 +206,14 @@ class RegexToColor:
     def _load_config(self, config_filepath):
         config = {}
         execfile(config_filepath, config)
-        assert 'regex_to_color' in config, 'Config file is invalid. It must contain a dictionary named regex_to_color of {str: int}.'
+        start_color = 1
         for (regex, color) in config['regex_to_color'].items():
-            assert 1 <= color <= 254, '\'{0}\': {1} is invalid. Color must be in the range [1, 254].'.format(regex, color)
-            self.regex_to_color[re.compile(r'({0})'.format(regex))] = color
+            if color < 0 or color > 255:
+                sys.exit('regex_to_color[\'{}\'] = {} is invalid. Color must be in the range [0, 255]'.format(regex, color))
+            self.regex_to_color[re.compile(r'({0})'.format(regex))] = start_color
             DEFAULT_BACKGROUND_COLOR = -1
-            curses.init_pair(color, color, DEFAULT_BACKGROUND_COLOR)
+            curses.init_pair(start_color, color, DEFAULT_BACKGROUND_COLOR)
+            start_color += 1
 
     def _items(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
