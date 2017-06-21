@@ -50,11 +50,6 @@ def write_search_queries_to_search_history_file(search_queries):
             search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
-def to_smartcase_regex(text):
-    if text.islower():
-        return re.compile(r'({0})'.format(text), re.IGNORECASE)
-    return re.compile(r'({0})'.format(text))
-
 
 class SearchHistory:
     def __init__(self, search_queries):
@@ -69,13 +64,19 @@ class SearchHistory:
         return self.search_queries
 
     def insert_search_query(self, search_query):
-        self.last_search_query_as_regex = to_smartcase_regex(search_query)
+        self.last_search_query_as_regex = self._to_smartcase_regex(search_query)
         self.search_queries.insert(0, search_query)
         self._filter_duplicate_search_queries()
 
     def _filter_duplicate_search_queries(self):
         MAX_SEARCH_QUERIES = 100
         self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
+
+    def _to_smartcase_regex(self, text):
+        if text.islower():
+            return re.compile(r'({0})'.format(text), re.IGNORECASE)
+        return re.compile(r'({0})'.format(text))
+
 
 
 class FileIterator:
