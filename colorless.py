@@ -230,7 +230,6 @@ class TailMode:
         self.regex_to_color = regex_to_color
 
     def start_tailing(self):
-        self.screen.nodelay(1)
         try:
             file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
             while True:
@@ -245,8 +244,6 @@ class TailMode:
         except KeyboardInterrupt:
             pass
         self.screen.erase()
-        self.screen.nodelay(0)
-        self.term_dims.update(self.screen)
         self.file_iter.seek_to_last_page()
 
     def _redraw_last_page(self):
