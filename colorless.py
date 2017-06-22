@@ -183,14 +183,33 @@ class FileIterator:
         self.input_file.seek(0, os.SEEK_END)
 
 
+def load_regex_to_color_from_config(config_filepath):
+    try:
+        config_file = open(config_filepath, 'r')
+    except EnvironmentError:
+        return {}
+    else:
+        with config_file:
+            config = {}
+            execfile(config_filepath, config)
+            start_color = 1
+            regex_to_color = collections.OrderedDict()
+            for (regex, color) in config['regex_to_color'].items():
+                if color < 0 or color > 255:
+                    sys.exit('regex_to_color[\'{}\'] = {} is invalid. Color must be in the range [0, 255]'.format(regex, color))
+                regex_to_color[re.compile(r'({0})'.format(regex))] = start_color
+                DEFAULT_BACKGROUND_COLOR = -1
+                curses.init_pair(start_color, color, DEFAULT_BACKGROUND_COLOR)
+                start_color += 1
+            return regex_to_color
+
+
 class RegexColorer:
-    def __init__(self, config_filepath, search_history):
-        self.regex_to_color = collections.OrderedDict()
+    def __init__(self, regex_to_color, search_history):
+        self.regex_to_color = regex_to_color
         self.search_history = search_history
         self.SEARCH_COLOR = 255
         curses.init_pair(self.SEARCH_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-        if config_filepath:
-            self._load_config(config_filepath)
 
     def color_line(self, line):
         colored_line = [0] * len(line)
@@ -203,18 +222,6 @@ class RegexColorer:
                     colored_line[col:col + len(token)] = [color] * len(token)
                 col += len(token)
         return colored_line
-
-    def _load_config(self, config_filepath):
-        config = {}
-        execfile(config_filepath, config)
-        start_color = 1
-        for (regex, color) in config['regex_to_color'].items():
-            if color < 0 or color > 255:
-                sys.exit('regex_to_color[\'{}\'] = {} is invalid. Color must be in the range [0, 255]'.format(regex, color))
-            self.regex_to_color[re.compile(r'({0})'.format(regex))] = start_color
-            DEFAULT_BACKGROUND_COLOR = -1
-            curses.init_pair(start_color, color, DEFAULT_BACKGROUND_COLOR)
-            start_color += 1
 
     def regex_to_color_with_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
@@ -404,7 +411,8 @@ def run_curses(screen, input_file, config_filepath):
     curses.curs_set(VERY_VISIBLE)
     search_queries = load_search_queries_from_search_history_file()
     search_history = SearchHistory(search_queries)
-    regex_colorer = RegexColorer(config_filepath, search_history)
+    regex_to_color = load_regex_to_color_from_config(config_filepath) if config_filepath else {}
+    regex_colorer = RegexColorer(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
