@@ -194,10 +194,10 @@ def validate_regex_to_color(config_filepath, regex_to_color):
     MAX_COLORS = 255
     if len(regex_to_color) > MAX_COLORS:
         err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(config_filepath, MAX_COLORS, len(regex_to_color))
-        raise ExitFailure(os.EX_NOINPUT)
+        raise ExitFailure(os.EX_NOINPUT, err_msg)
     for regex, color in regex_to_color.items():
         if color < 0 or color > 255:
-            err_msg = '{}: (regex: {}, color: {}) is invalid. Color must be in the range [0, {}]'.format(config_filepath, regex, color, MAX_COLORS)
+            err_msg = '{}: (regex: {}, color: {}) is invalid - color must be in the range [0, {}]'.format(config_filepath, regex, color, MAX_COLORS)
             raise ExitFailure(os.EX_NOINPUT, err_msg)
 
 
@@ -208,12 +208,19 @@ def load_regex_to_color_from_config(config_filepath):
         raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
     with config_file:
         config = {}
-        execfile(config_filepath, config)
-        regex_to_color = config['regex_to_color']
+        try:
+            execfile(config_filepath, config)
+        except Exception as e:
+            raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, e.message))
+        REGEX_TO_COLOR = 'regex_to_color'
+        if REGEX_TO_COLOR not in config:
+            err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
+            raise ExitFailure(os.EX_NOINPUT, err_msg)
+        regex_to_color = config[REGEX_TO_COLOR]
         validate_regex_to_color(config_filepath, regex_to_color)
         regex_to_color = collections.OrderedDict()
         STARTING_COLOR_ID = 1
-        for color_id, (regex, color) in enumerate(config['regex_to_color'].items(), STARTING_COLOR_ID):
+        for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
             regex_to_color[re.compile(r'({0})'.format(regex))] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
