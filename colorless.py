@@ -213,7 +213,7 @@ class RegexColorer:
 
     def color_line(self, line):
         colored_line = [0] * len(line)
-        for regex, color in self.regex_to_color_with_last_search_query():
+        for regex, color in self._regex_to_color_including_last_search_query():
             tokens = regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
@@ -223,7 +223,7 @@ class RegexColorer:
                 col += len(token)
         return colored_line
 
-    def regex_to_color_with_last_search_query(self):
+    def _regex_to_color_including_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
         regex_to_color[self.search_history.get_last_search_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
