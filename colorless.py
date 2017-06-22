@@ -59,20 +59,27 @@ def write_search_queries_to_search_history_file(search_queries):
         search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
+def compile_regex(regex):
+    try:
+        return re.compile(r'({0})'.format(regex))
+    except re.error as e:
+        raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, e.message))
+
+
 class SearchHistory:
     def __init__(self, search_queries):
-        UNMATCHABLE_REGEX = re.compile('a^')
-        self.last_search_query_as_regex = UNMATCHABLE_REGEX
+        UNMATCHABLE_COMPILED_REGEX = re.compile('a^')
+        self.last_search_query_as_compiled_regex = UNMATCHABLE_COMPILED_REGEX
         self.search_queries = search_queries
 
-    def get_last_search_query_as_regex(self):
-        return self.last_search_query_as_regex
+    def get_last_search_query_as_compiled_regex(self):
+        return self.last_search_query_as_compiled_regex
 
     def get_search_queries(self):
         return self.search_queries
 
     def insert_search_query(self, search_query):
-        self.last_search_query_as_regex = self._convert_text_to_smartcase_regex(search_query)
+        self.last_search_query_as_compiled_regex = self._compile_smartcase_regex(search_query)
         self.search_queries.insert(0, search_query)
         self._filter_duplicate_search_queries()
 
@@ -80,10 +87,10 @@ class SearchHistory:
         MAX_SEARCH_QUERIES = 100
         self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
 
-    def _convert_text_to_smartcase_regex(self, text):
-        if text.islower():
-            return re.compile(r'({0})'.format(text), re.IGNORECASE)
-        return re.compile(r'({0})'.format(text))
+    def _compile_smartcase_regex(self, regex):
+        if regex.islower():
+            return compile_regex(regex)
+        return compile_regex(regex)
 
 
 class FileIterator:
@@ -221,7 +228,7 @@ def load_regex_to_color_from_config(config_filepath):
         regex_to_color = collections.OrderedDict()
         STARTING_COLOR_ID = 1
         for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
-            regex_to_color[re.compile(r'({0})'.format(regex))] = color_id
+            regex_to_color[re.compile(compile_regex(regex))] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
         return regex_to_color
@@ -236,8 +243,8 @@ class RegexColorer:
 
     def color_line(self, line):
         colored_line = [0] * len(line)
-        for regex, color in self._regex_to_color_including_last_search_query():
-            tokens = regex.split(line)
+        for compiled_regex, color in self._regex_to_color_including_last_search_query():
+            tokens = compiled_regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
                 token_matches_regex = (index % 2 == 1)
@@ -248,7 +255,7 @@ class RegexColorer:
 
     def _regex_to_color_including_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
-        regex_to_color[self.search_history.get_last_search_query_as_regex()] = self.SEARCH_COLOR
+        regex_to_color[self.search_history.get_last_search_query_as_compiled_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
 
 
@@ -334,22 +341,22 @@ class SearchMode:
             return False
 
     def _search_forwards(self):
-        search_query_regex = self.search_history.get_last_search_query_as_regex()
+        compiled_search_query_regex = self.search_history.get_last_search_query_as_compiled_regex()
         self.file_iter.read_next_line()
         for line in self.file_iter.next_line_iterator():
             if not line:
                 return False
-            elif search_query_regex.search(line):
+            elif compiled_search_query_regex.search(line):
                 next(self.file_iter.prev_line_iterator())
                 self.file_iter.clamp_position_to_last_page()
                 return True
 
     def _search_backwards(self):
-        search_query_regex = self.search_history.get_last_search_query_as_regex()
+        compiled_search_query_regex = self.search_history.get_last_search_query_as_compiled_regex()
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
-            elif search_query_regex.search(line):
+            elif compiled_search_query_regex.search(line):
                 return True
 
     def _wait_for_user_to_input_search_query(self, search_direction_char):
