@@ -15,6 +15,17 @@ SEARCH_FORWARDS_CHAR = '/'
 SEARCH_BACKWARDS_CHAR = '?'
 
 
+class ExitSuccess(Exception):
+    def __init__(self):
+        self.exit_code = os.EX_OK
+
+
+class ExitFailure(Exception):
+    def __init__(self, exit_code, msg):
+        self.exit_code = exit_code
+        self.msg = msg
+
+
 class TerminalDimensions:
     def __init__(self, screen):
         self.update(screen)
@@ -34,20 +45,18 @@ def load_search_queries_from_search_history_file():
         search_history_file = open(get_search_history_filepath(), 'a+')
     except EnvironmentError:
         return []
-    else:
-        with search_history_file:
-            search_history_file.seek(0)
-            return [line.rstrip('\n') for line in search_history_file.readlines()]
+    with search_history_file:
+        search_history_file.seek(0)
+        return [line.rstrip('\n') for line in search_history_file.readlines()]
 
 
 def write_search_queries_to_search_history_file(search_queries):
     try:
         search_history_file = open(get_search_history_filepath(), 'w')
     except EnvironmentError:
-        pass
-    else:
-        with search_history_file:
-            search_history_file.writelines(search_query + '\n' for search_query in search_queries)
+        return
+    with search_history_file:
+        search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
 
@@ -64,7 +73,7 @@ class SearchHistory:
         return self.search_queries
 
     def insert_search_query(self, search_query):
-        self.last_search_query_as_regex = self._to_smartcase_regex(search_query)
+        self.last_search_query_as_regex = self._convert_text_to_smartcase_regex(search_query)
         self.search_queries.insert(0, search_query)
         self._filter_duplicate_search_queries()
 
@@ -72,7 +81,7 @@ class SearchHistory:
         MAX_SEARCH_QUERIES = 100
         self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
 
-    def _to_smartcase_regex(self, text):
+    def _convert_text_to_smartcase_regex(self, text):
         if text.islower():
             return re.compile(r'({0})'.format(text), re.IGNORECASE)
         return re.compile(r'({0})'.format(text))
@@ -183,25 +192,34 @@ class FileIterator:
         self.input_file.seek(0, os.SEEK_END)
 
 
+def validate_regex_to_color(config_filepath, regex_to_color):
+    MAX_COLORS = 255
+    if len(regex_to_color) > MAX_COLORS:
+        err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(config_filepath, MAX_COLORS, len(regex_to_color))
+        raise ExitFailure(os.EX_NOINPUT)
+    for regex, color in regex_to_color.items():
+        if color < 0 or color > 255:
+            err_msg = '{}: (regex: {}, color: {}) is invalid. Color must be in the range [0, {}]'.format(config_filepath, regex, color, MAX_COLORS)
+            raise ExitFailure(os.EX_NOINPUT, err_msg)
+
+
 def load_regex_to_color_from_config(config_filepath):
     try:
         config_file = open(config_filepath, 'r')
     except EnvironmentError:
-        return {}
-    else:
-        with config_file:
-            config = {}
-            execfile(config_filepath, config)
-            start_color = 1
-            regex_to_color = collections.OrderedDict()
-            for (regex, color) in config['regex_to_color'].items():
-                if color < 0 or color > 255:
-                    sys.exit('regex_to_color[\'{}\'] = {} is invalid. Color must be in the range [0, 255]'.format(regex, color))
-                regex_to_color[re.compile(r'({0})'.format(regex))] = start_color
-                DEFAULT_BACKGROUND_COLOR = -1
-                curses.init_pair(start_color, color, DEFAULT_BACKGROUND_COLOR)
-                start_color += 1
-            return regex_to_color
+        raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
+    with config_file:
+        config = {}
+        execfile(config_filepath, config)
+        regex_to_color = config['regex_to_color']
+        validate_regex_to_color(config_filepath, regex_to_color)
+        regex_to_color = collections.OrderedDict()
+        STARTING_COLOR_ID = 1
+        for color_id, (regex, color) in enumerate(config['regex_to_color'].items(), STARTING_COLOR_ID):
+            regex_to_color[re.compile(r'({0})'.format(regex))] = color_id
+            DEFAULT_BACKGROUND_COLOR = -1
+            curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
+        return regex_to_color
 
 
 class RegexColorer:
@@ -490,16 +508,22 @@ def run(args):
     try:
         input_file = open(args.filepath, 'r')
     except EnvironmentError:
-        sys.stderr.write('{}: No such file or directory'.format(args.filepath))
-        return os.EX_NOINPUT
-    else:
-        with input_file:
-            return curses.wrapper(run_curses, input_file, args.config_filepath)
+        raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(args.filepath))
+    with input_file:
+        return curses.wrapper(run_curses, input_file, args.config_filepath)
 
 
 def main():
-    signal.signal(signal.SIGTERM, lambda signal, frame: sys.exit(os.EX_OK))
-    exit_code = run(sys.argv[1:])
+    def sigterm_handler(signal, frame):
+        raise ExitSuccess()
+    signal.signal(signal.SIGTERM, sigterm_handler)
+    try:
+        exit_code = run(sys.argv[1:])
+    except ExitSuccess as e:
+        exit_code = e.exit_code
+    except ExitFailure as e:
+        sys.stderr.write(e.msg)
+        exit_code = e.exit_code
     sys.exit(exit_code)
 
 
