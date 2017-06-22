@@ -183,7 +183,7 @@ class FileIterator:
         self.input_file.seek(0, os.SEEK_END)
 
 
-class RegexToColor:
+class RegexColorer:
     def __init__(self, config_filepath, search_history):
         self.regex_to_color = collections.OrderedDict()
         self.search_history = search_history
@@ -192,9 +192,9 @@ class RegexToColor:
         if config_filepath:
             self._load_config(config_filepath)
 
-    def to_colored_line(self, line):
+    def color_line(self, line):
         colored_line = [0] * len(line)
-        for regex, color in self._items():
+        for regex, color in self.regex_to_color_with_last_search_query():
             tokens = regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
@@ -216,18 +216,18 @@ class RegexToColor:
             curses.init_pair(start_color, color, DEFAULT_BACKGROUND_COLOR)
             start_color += 1
 
-    def _items(self):
+    def regex_to_color_with_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
         regex_to_color[self.search_history.get_last_search_query_as_regex()] = self.SEARCH_COLOR
         return regex_to_color.items()
 
 
 class TailMode:
-    def __init__(self, screen, term_dims, file_iter, regex_to_color):
+    def __init__(self, screen, term_dims, file_iter, regex_colorer):
         self.screen = screen
         self.term_dims = term_dims
         self.file_iter = file_iter
-        self.regex_to_color = regex_to_color
+        self.regex_colorer = regex_colorer
 
     def start_tailing(self):
         try:
@@ -248,7 +248,7 @@ class TailMode:
 
     def _redraw_last_page(self):
         self.file_iter.seek_to_last_page()
-        redraw_screen(self.screen, self.term_dims, self.regex_to_color, self.file_iter,
+        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter,
                       'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
 
 
@@ -377,7 +377,7 @@ def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
         col += length
 
 
-def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
+def redraw_screen(screen, term_dims, regex_colorer, file_iter, prompt):
     screen.move(0, 0)
     row = 0
     screen.erase()
@@ -385,7 +385,7 @@ def redraw_screen(screen, term_dims, regex_to_color, file_iter, prompt):
         if not line or row == term_dims.rows:
             break
         line = line.rstrip('\n').encode('string_escape')
-        colored_line = regex_to_color.to_colored_line(line)
+        colored_line = regex_colorer.color_line(line)
         wrapped_lines = wrap(line, term_dims.cols)
         wrapped_colored_lines = wrap(colored_line, term_dims.cols)
         for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
@@ -404,14 +404,14 @@ def run_curses(screen, input_file, config_filepath):
     curses.curs_set(VERY_VISIBLE)
     search_queries = load_search_queries_from_search_history_file()
     search_history = SearchHistory(search_queries)
-    regex_to_color = RegexToColor(config_filepath, search_history)
+    regex_colorer = RegexColorer(config_filepath, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     search_mode = SearchMode(screen, term_dims, file_iter, search_history)
-    tail_mode = TailMode(screen, term_dims, file_iter, regex_to_color)
+    tail_mode = TailMode(screen, term_dims, file_iter, regex_colorer)
     while True:
         try:
-            redraw_screen(screen, term_dims, regex_to_color, file_iter, ':')
+            redraw_screen(screen, term_dims, regex_colorer, file_iter, ':')
             user_input = screen.getch()
             if user_input == ord('q'):
                 return os.EX_OK
