@@ -258,18 +258,18 @@ class TailMode:
 
 
 class SearchMode:
-    def __init__(self, screen, term_dims, file_iter, search_history):
+    def __init__(self, screen, term_dims, file_iter, regex_colorer, search_history):
         self.screen = screen
         self.term_dims = term_dims
+        self.regex_colorer = regex_colorer
         self.file_iter = file_iter
         self.search_history = search_history
         self.last_search_direction_char = None
 
     def start_new_search(self, search_direction_char):
-        self.screen.addstr(self.term_dims.rows, 0, search_direction_char)
         search_query = None
         try:
-            search_query = self._wait_for_user_to_input_search_query()
+            search_query = self._wait_for_user_to_input_search_query(search_direction_char)
         except KeyboardInterrupt:
             pass
         if not search_query:
@@ -329,7 +329,8 @@ class SearchMode:
             elif search_query_regex.search(line):
                 return True
 
-    def _wait_for_user_to_input_search_query(self):
+    def _wait_for_user_to_input_search_query(self, search_direction_char):
+        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
         search_prefix = ''
         search_suffix = ''
         search_queries = self.search_history.get_search_queries()
@@ -341,6 +342,7 @@ class SearchMode:
                 break
             elif user_input == curses.KEY_RESIZE:
                 self.term_dims.update(self.screen)
+                redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
             elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
                 search_prefix = search_prefix[:-1]
             elif 0 <= user_input <= 255:
@@ -412,7 +414,7 @@ def run_curses(screen, input_file, config_filepath):
     regex_colorer = RegexColorer(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
-    search_mode = SearchMode(screen, term_dims, file_iter, search_history)
+    search_mode = SearchMode(screen, term_dims, file_iter, regex_colorer, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, regex_colorer)
     while True:
         try:
