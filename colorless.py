@@ -250,8 +250,6 @@ class TailMode:
                     file_size_in_bytes = new_file_size_in_bytes
         except KeyboardInterrupt:
             pass
-        self.screen.erase()
-        self.file_iter.seek_to_last_page()
 
     def _redraw_last_page(self):
         self.file_iter.seek_to_last_page()
@@ -274,7 +272,6 @@ class SearchMode:
             search_query = self._wait_for_user_to_input_search_query()
         except KeyboardInterrupt:
             pass
-        self.screen.erase()
         if not search_query:
             return
         self.search_history.insert_search_query(search_query)
