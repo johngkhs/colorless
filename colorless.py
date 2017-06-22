@@ -59,7 +59,6 @@ def write_search_queries_to_search_history_file(search_queries):
         search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
-
 class SearchHistory:
     def __init__(self, search_queries):
         UNMATCHABLE_REGEX = re.compile('a^')
@@ -85,7 +84,6 @@ class SearchHistory:
         if text.islower():
             return re.compile(r'({0})'.format(text), re.IGNORECASE)
         return re.compile(r'({0})'.format(text))
-
 
 
 class FileIterator:
