@@ -230,25 +230,26 @@ class TailMode:
         self.regex_to_color = regex_to_color
 
     def start_tailing(self):
+        self.screen.nodelay(1)
         try:
-            self.screen.nodelay(1)
-            curses.curs_set(0)
+            file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
             while True:
-                file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
+                self.term_dims.update(self.screen)
                 self._redraw_last_page()
-                while file_size_in_bytes == self.file_iter.peek_file_size_in_bytes():
-                    time.sleep(0.01)
+                new_file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
+                if file_size_in_bytes == new_file_size_in_bytes:
+                    ONE_HUNDRED_MILLIS = 0.100
+                    time.sleep(ONE_HUNDRED_MILLIS)
+                else:
+                    file_size_in_bytes = new_file_size_in_bytes
         except KeyboardInterrupt:
             pass
         self.screen.erase()
         self.screen.nodelay(0)
-        curses.curs_set(1)
         self.term_dims.update(self.screen)
         self.file_iter.seek_to_last_page()
 
     def _redraw_last_page(self):
-        if self.screen.getch() == curses.KEY_RESIZE:
-            self.term_dims.update(screen)
         self.file_iter.seek_to_last_page()
         redraw_screen(self.screen, self.term_dims, self.regex_to_color, self.file_iter,
                       'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
@@ -337,6 +338,8 @@ class SearchMode:
             user_input = self.screen.getch()
             if user_input == ord('\n'):
                 break
+            elif user_input == curses.KEY_RESIZE:
+                self.term_dims.update(self.screen)
             elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
                 search_prefix = search_prefix[:-1]
             elif 0 <= user_input <= 255:
@@ -353,8 +356,10 @@ class SearchMode:
                 search_prefix, search_suffix = search_queries[search_history_index], ''
             self.screen.move(self.term_dims.rows, 1)
             self.screen.clrtoeol()
-            self.screen.addstr(self.term_dims.rows, 1, search_prefix + search_suffix)
-            self.screen.move(self.term_dims.rows, len(search_prefix) + 1)
+            search_query = search_prefix + search_suffix
+            visible_search_query = search_query[:self.term_dims.cols - 2]
+            self.screen.addstr(self.term_dims.rows, 1, visible_search_query)
+            self.screen.move(self.term_dims.rows, len(visible_search_query) + 1)
             self.screen.refresh()
         return search_prefix + search_suffix
 
