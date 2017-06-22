@@ -346,12 +346,12 @@ class SearchMode:
                 return True
 
     def _wait_for_user_to_input_search_query(self, search_direction_char):
-        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
         search_prefix = ''
         search_suffix = ''
         search_queries = self.search_history.get_search_queries()
         search_history_index = -1
         KEY_DELETE = 127
+        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
         while True:
             user_input = self.screen.getch()
             if user_input == ord('\n'):
@@ -373,12 +373,13 @@ class SearchMode:
             elif user_input == curses.KEY_DOWN and search_history_index > 0:
                 search_history_index -= 1
                 search_prefix, search_suffix = search_queries[search_history_index], ''
+            redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
             self.screen.move(self.term_dims.rows, 1)
             self.screen.clrtoeol()
             search_query = search_prefix + search_suffix
             visible_search_query = search_query[:self.term_dims.cols - 2]
             self.screen.addstr(self.term_dims.rows, 1, visible_search_query)
-            self.screen.move(self.term_dims.rows, len(visible_search_query) + 1)
+            self.screen.move(self.term_dims.rows, min(len(search_prefix), self.term_dims.cols - 2) + 1)
             self.screen.refresh()
         return search_prefix + search_suffix
 
@@ -520,7 +521,7 @@ def main():
     except ExitSuccess as e:
         exit_code = e.exit_code
     except ExitFailure as e:
-        sys.stderr.write(e.msg)
+        sys.stderr.write(e.msg + '\n')
         exit_code = e.exit_code
     sys.exit(exit_code)
 
