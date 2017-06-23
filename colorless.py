@@ -100,7 +100,7 @@ class FileIterator:
 
     def peek_next_lines(self, count):
         position = self.input_file.tell()
-        lines = [self.read_next_line() for _ in range(count)]
+        lines = [self.input_file.readline() for _ in range(count)]
         self.input_file.seek(position)
         return lines
 
@@ -136,14 +136,11 @@ class FileIterator:
 
     def next_line_iterator(self):
         while True:
-            line = self.read_next_line()
+            line = self.input_file.readline()
             if not line:
                 yield ''
                 return
             yield line
-
-    def read_next_line(self):
-        return self.input_file.readline()
 
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
@@ -179,7 +176,7 @@ class FileIterator:
         self.clamp_position_to_last_page()
 
     def _seek_next_wrapped_line(self):
-        line = self.read_next_line()
+        line = self.input_file.readline()
         if len(line) > self.term_dims.cols:
             self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
 
@@ -342,7 +339,7 @@ class SearchMode:
 
     def _search_forwards(self):
         compiled_search_query_regex = self.search_history.get_last_search_query_as_compiled_regex()
-        self.file_iter.read_next_line()
+        next(self.file_iter.next_line_iterator())
         for line in self.file_iter.next_line_iterator():
             if not line:
                 return False
