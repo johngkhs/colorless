@@ -59,7 +59,7 @@ def write_search_queries_to_search_history_file(search_queries):
         search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
-def compile_regex(regex, flags = 0):
+def compile_regex(regex, flags=0):
     try:
         return re.compile(r'({0})'.format(regex), flags)
     except re.error as exception:
