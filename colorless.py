@@ -59,11 +59,15 @@ def write_search_queries_to_search_history_file(search_queries):
         search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
-def compile_regex(regex):
+def compile_regex(regex, flags = 0):
     try:
-        return re.compile(r'({0})'.format(regex))
-    except re.error as e:
-        raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, e.message))
+        return re.compile(r'({0})'.format(regex), flags)
+    except re.error as exception:
+        raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+
+
+def sanitize_line(line):
+    return line.decode('latin-1').encode('unicode-escape').decode('latin-1').rstrip('\\n')
 
 
 class SearchHistory:
@@ -89,7 +93,7 @@ class SearchHistory:
 
     def _compile_smartcase_regex(self, regex):
         if regex.islower():
-            return compile_regex(regex)
+            return compile_regex(regex, re.IGNORECASE)
         return compile_regex(regex)
 
 
@@ -100,7 +104,7 @@ class FileIterator:
 
     def peek_next_lines(self, count):
         position = self.input_file.tell()
-        lines = [self.input_file.readline() for _ in range(count)]
+        lines = [sanitize_line(self.input_file.readline()) for _ in range(count)]
         self.input_file.seek(position)
         return lines
 
@@ -124,11 +128,11 @@ class FileIterator:
             lines = chunk.splitlines(True)
             for line in reversed(lines[1:]):
                 self.input_file.seek(-len(line), os.SEEK_CUR)
-                yield line
+                yield sanitize_line(line)
             first_line_in_chunk = lines[0]
             if self.input_file.tell() == len(first_line_in_chunk):
                 self.input_file.seek(-len(first_line_in_chunk), os.SEEK_CUR)
-                yield first_line_in_chunk
+                yield sanitize_line(first_line_in_chunk)
                 yield ''
                 return
             elif len(lines) == 1:
@@ -140,12 +144,12 @@ class FileIterator:
             if not line:
                 yield ''
                 return
-            yield line
+            yield sanitize_line(line)
 
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
         file_size_in_bytes = self.peek_file_size_in_bytes()
-        self.input_file.seek(percentage * file_size_in_bytes)
+        self.input_file.seek(int(percentage * file_size_in_bytes))
         next(self.prev_line_iterator())
         self.clamp_position_to_last_page()
 
@@ -210,25 +214,25 @@ def load_regex_to_color_from_config(config_filepath):
         config_file = open(config_filepath, 'r')
     except EnvironmentError:
         raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
+    config = {}
     with config_file:
-        config = {}
         try:
-            execfile(config_filepath, config)
-        except Exception as e:
-            raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, e.message))
-        REGEX_TO_COLOR = 'regex_to_color'
-        if REGEX_TO_COLOR not in config:
-            err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
-            raise ExitFailure(os.EX_NOINPUT, err_msg)
-        regex_to_color = config[REGEX_TO_COLOR]
-        validate_regex_to_color(config_filepath, regex_to_color)
-        regex_to_color = collections.OrderedDict()
-        STARTING_COLOR_ID = 1
-        for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
-            regex_to_color[re.compile(compile_regex(regex))] = color_id
-            DEFAULT_BACKGROUND_COLOR = -1
-            curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
-        return regex_to_color
+            exec(config_file.read(), config)
+        except Exception as exception:
+            raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, exception))
+    REGEX_TO_COLOR = 'regex_to_color'
+    if REGEX_TO_COLOR not in config:
+        err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
+        raise ExitFailure(os.EX_NOINPUT, err_msg)
+    regex_to_color = config[REGEX_TO_COLOR]
+    validate_regex_to_color(config_filepath, regex_to_color)
+    regex_to_color = collections.OrderedDict()
+    STARTING_COLOR_ID = 1
+    for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
+        regex_to_color[re.compile(compile_regex(regex))] = color_id
+        DEFAULT_BACKGROUND_COLOR = -1
+        curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
+    return regex_to_color
 
 
 class RegexColorer:
@@ -418,7 +422,6 @@ def redraw_screen(screen, term_dims, regex_colorer, file_iter, prompt):
     for line in file_iter.peek_next_lines(term_dims.rows):
         if not line or row == term_dims.rows:
             break
-        line = line.rstrip('\n').encode('string_escape')
         colored_line = regex_colorer.color_line(line)
         wrapped_lines = wrap(line, term_dims.cols)
         wrapped_colored_lines = wrap(colored_line, term_dims.cols)
@@ -457,9 +460,9 @@ def run_curses(screen, input_file, config_filepath):
             elif user_input == ord('k'):
                 file_iter.seek_prev_wrapped_lines(1)
             elif user_input == ord('d'):
-                file_iter.seek_next_wrapped_lines(term_dims.rows / 2)
+                file_iter.seek_next_wrapped_lines(int(term_dims.rows / 2))
             elif user_input == ord('u'):
-                file_iter.seek_prev_wrapped_lines(term_dims.rows / 2)
+                file_iter.seek_prev_wrapped_lines(int(term_dims.rows / 2))
             elif user_input == ord('f'):
                 file_iter.seek_next_wrapped_lines(term_dims.rows)
             elif user_input == ord('b'):
@@ -516,7 +519,7 @@ def run(args):
         return os.EX_USAGE
     args = arg_parser.parse_args()
     try:
-        input_file = open(args.filepath, 'r')
+        input_file = open(args.filepath, 'rb')
     except EnvironmentError:
         raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(args.filepath))
     with input_file:
