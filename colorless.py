@@ -67,7 +67,7 @@ def compile_regex(regex, flags=0):
 
 
 def sanitize_line(line):
-    return line.decode('utf-8').encode('unicode-escape').decode('utf-8').rstrip('\\n')
+    return line.decode('utf-8').rstrip('\n').encode('unicode-escape').decode('utf-8')
 
 
 class SearchHistory:
@@ -128,11 +128,11 @@ class FileIterator:
             lines = chunk.splitlines(True)
             for line in reversed(lines[1:]):
                 self.input_file.seek(-len(line), os.SEEK_CUR)
-                yield sanitize_line(line)
+                yield line
             first_line_in_chunk = lines[0]
             if self.input_file.tell() == len(first_line_in_chunk):
                 self.input_file.seek(-len(first_line_in_chunk), os.SEEK_CUR)
-                yield sanitize_line(first_line_in_chunk)
+                yield first_line_in_chunk
                 yield ''
                 return
             elif len(lines) == 1:
@@ -144,7 +144,7 @@ class FileIterator:
             if not line:
                 yield ''
                 return
-            yield sanitize_line(line)
+            yield line
 
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
