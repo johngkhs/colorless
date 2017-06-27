@@ -110,10 +110,11 @@ class FileIterator:
         return lines
 
     def peek_file_size_in_bytes(self):
-        position = self.input_file.tell()
+        position, line_col = self.input_file.tell(), self.line_col
         self._seek_to_end_of_file()
         file_size_in_bytes = self.input_file.tell()
         self.input_file.seek(position)
+        self.line_col = line_col
         return file_size_in_bytes
 
     def prev_line_iterator(self):
@@ -175,7 +176,7 @@ class FileIterator:
         position = self.input_file.tell()
         line_col = self.line_col
         self.seek_to_last_page()
-        if position < self.input_file.tell():
+        if position < self.input_file.tell() or (position == self.input_file.tell() and line_col < self.line_col):
             self.input_file.seek(position)
             self.line_col = line_col
 
@@ -212,6 +213,7 @@ class FileIterator:
                 break
 
     def _seek_to_end_of_file(self):
+        self.line_col = 0
         self.input_file.seek(0, os.SEEK_END)
 
 
