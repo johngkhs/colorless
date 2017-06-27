@@ -67,7 +67,7 @@ def compile_regex(regex, flags=0):
 
 
 def sanitize_line(line):
-    return line.decode('utf-8').rstrip('\n').encode('unicode-escape').decode('utf-8')
+    return line.decode('utf-8').rstrip('\n').replace('\x01', '\\x01').replace('\t', '    ')
 
 
 class SearchHistory:
@@ -100,11 +100,12 @@ class SearchHistory:
 class FileIterator:
     def __init__(self, input_file, term_dims):
         self.input_file = input_file
+        self.line_col = 0
         self.term_dims = term_dims
 
     def peek_next_lines(self, count):
         position = self.input_file.tell()
-        lines = [sanitize_line(self.input_file.readline()) for _ in range(count)]
+        lines = [self.input_file.readline() for _ in range(count)]
         self.input_file.seek(position)
         return lines
 
@@ -172,8 +173,11 @@ class FileIterator:
 
     def clamp_position_to_last_page(self):
         position = self.input_file.tell()
+        line_col = self.line_col
         self.seek_to_last_page()
-        self.input_file.seek(min(position, self.input_file.tell()))
+        if position < self.input_file.tell():
+            self.input_file.seek(position)
+            self.line_col = line_col
 
     def seek_next_wrapped_lines(self, count):
         self._seek_next_wrapped_lines(count)
@@ -181,18 +185,31 @@ class FileIterator:
 
     def _seek_next_wrapped_line(self):
         line = self.input_file.readline()
-        if len(line) > self.term_dims.cols:
-            self.input_file.seek(self.term_dims.cols - len(line), os.SEEK_CUR)
+        sanitized_line = sanitize_line(line)
+        self.line_col += self.term_dims.cols
+        if self.line_col >= len(sanitized_line):
+            self.line_col = 0
+        else:
+            self.input_file.seek(-len(line), os.SEEK_CUR)
 
     def _seek_next_wrapped_lines(self, count):
         for _ in range(count):
             self._seek_next_wrapped_line()
 
     def _seek_prev_wrapped_line(self):
+        if self.line_col > 0:
+            self.line_col = max(0, self.line_col - self.term_dims.cols)
+            return
         line = next(self.prev_line_iterator())
-        wrapped_lines = wrap(line, self.term_dims.cols)
-        for wrapped_line in wrapped_lines[:-1]:
-            self.input_file.seek(len(wrapped_line), os.SEEK_CUR)
+        if not line:
+            return
+        sanitized_line = sanitize_line(line)
+        if len(sanitized_line) <= self.term_dims.cols:
+            return
+        else:
+            for line_col in reversed(range(0, len(sanitized_line), self.term_dims.cols)):
+                self.line_col = line_col
+                break
 
     def _seek_to_end_of_file(self):
         self.input_file.seek(0, os.SEEK_END)
@@ -347,7 +364,7 @@ class SearchMode:
         for line in self.file_iter.next_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(line):
+            elif compiled_search_query_regex.search(sanitize_line(line)):
                 next(self.file_iter.prev_line_iterator())
                 self.file_iter.clamp_position_to_last_page()
                 return True
@@ -357,7 +374,7 @@ class SearchMode:
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(line):
+            elif compiled_search_query_regex.search(sanitize_line(line)):
                 return True
 
     def _wait_for_user_to_input_search_query(self, search_direction_char):
@@ -419,9 +436,12 @@ def redraw_screen(screen, term_dims, regex_colorer, file_iter, prompt):
     screen.move(0, 0)
     row = 0
     screen.erase()
-    for line in file_iter.peek_next_lines(term_dims.rows):
+    for i, line in enumerate(file_iter.peek_next_lines(term_dims.rows)):
         if not line or row == term_dims.rows:
             break
+        line = sanitize_line(line)
+        if i == 0:
+            line = line[file_iter.line_col:]
         colored_line = regex_colorer.color_line(line)
         wrapped_lines = wrap(line, term_dims.cols)
         wrapped_colored_lines = wrap(colored_line, term_dims.cols)
