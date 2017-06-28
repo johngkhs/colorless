@@ -67,7 +67,7 @@ def compile_regex(regex, flags=0):
 
 
 def sanitize_line(line):
-    return line.decode('utf-8').rstrip('\n').replace('\x01', '\\x01').replace('\t', '    ')
+    return line.decode('utf-8').replace('\x01', '\\x01').replace('\t', '    ')
 
 
 class SearchHistory:
