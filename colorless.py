@@ -339,7 +339,9 @@ class SearchMode:
         position = self.file_iter.tell()
         try:
             search_succeeded = search_function()
-            if not search_succeeded:
+            if search_succeeded:
+                self.file_iter.line_col = 0
+            else:
                 self.file_iter.seek(position)
         except KeyboardInterrupt:
             self.file_iter.seek(position)
