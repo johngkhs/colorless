@@ -3,6 +3,7 @@
 import argparse
 import collections
 import curses
+import locale
 import itertools
 import os
 import re
@@ -67,7 +68,7 @@ def compile_regex(regex, flags=0):
 
 
 def sanitize_line(line):
-    return line.decode('utf-8').replace('\x01', '\\x01').replace('\t', '    ')
+    return line.decode(locale.getpreferredencoding(False)).replace('\x01', '\\x01').replace('\t', '    ')
 
 
 class SearchHistory:
@@ -554,6 +555,7 @@ def main():
     def sigterm_handler(signal, frame):
         raise ExitSuccess()
     signal.signal(signal.SIGTERM, sigterm_handler)
+    locale.setlocale(locale.LC_ALL, '')
     try:
         exit_code = run(sys.argv[1:])
     except ExitSuccess as e:
