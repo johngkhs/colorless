@@ -223,16 +223,16 @@ class ConfigFileReader:
         try:
             config_file = open(self.config_filepath, 'r')
         except EnvironmentError:
-            raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
+            raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(self.config_filepath))
         config = {}
         with config_file:
             try:
                 exec(config_file.read(), config)
             except Exception as exception:
-                raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, exception))
+                raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(self.config_filepath, exception))
         REGEX_TO_COLOR = 'regex_to_color'
         if REGEX_TO_COLOR not in config:
-            err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
+            err_msg = '{}: The config must contain a dictionary named {}'.format(self.config_filepath, REGEX_TO_COLOR)
             raise ExitFailure(os.EX_NOINPUT, err_msg)
         regex_to_color = config[REGEX_TO_COLOR]
         self._validate_regex_to_color(regex_to_color)
@@ -444,11 +444,11 @@ class ScreenDrawer:
             color_mask = self.color_mask_generator.generate_color_mask(line)
             wrapped_lines = self._wrap(line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
-            for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_color_masks):
+            for (wrapped_line, wrapped_color_mask) in zip(wrapped_lines, wrapped_color_masks):
                 if row == self.term_dims.rows:
                     break
                 self.screen.addstr(row, 0, wrapped_line)
-                self._draw_colored_line(row, wrapped_line, wrapped_colored_line)
+                self._draw_colored_line(row, wrapped_line, wrapped_color_mask)
                 row += 1
         self.screen.addstr(self.term_dims.rows, 0, prompt[:self.term_dims.cols - 2])
         self.screen.refresh()
@@ -456,15 +456,15 @@ class ScreenDrawer:
     def _wrap(self, line, cols):
         return [line[i:i + cols] for i in range(0, len(line), cols)]
 
-    def _distinct_colors(self, wrapped_colored_line):
-        return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
-
-    def _draw_colored_line(self, row, wrapped_line, wrapped_colored_line):
+    def _draw_colored_line(self, row, wrapped_line, wrapped_color_mask):
         col = 0
-        for color, length in self._distinct_colors(wrapped_colored_line):
+        for color, length in self._distinct_colors(wrapped_color_mask):
             if color != 0:
                 self.screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
             col += length
+
+    def _distinct_colors(self, wrapped_color_mask):
+        return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_color_mask)]
 
 
 def run_curses(screen, input_file, config_filepath):
