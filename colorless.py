@@ -12,10 +12,6 @@ import sys
 import time
 
 
-SEARCH_FORWARDS_CHAR = '/'
-SEARCH_BACKWARDS_CHAR = '?'
-
-
 class ExitSuccess(Exception):
     def __init__(self):
         self.exit_code = os.EX_OK
@@ -86,11 +82,11 @@ class SearchHistory:
     def insert_search_query(self, search_query):
         self.last_search_query_as_compiled_regex = self._compile_smartcase_regex(search_query)
         self.search_queries.insert(0, search_query)
-        self._filter_duplicate_search_queries()
+        self.search_queries = self._filter_duplicate_search_queries(self.search_queries)
 
-    def _filter_duplicate_search_queries(self):
+    def _filter_duplicate_search_queries(self, search_queries):
         MAX_SEARCH_QUERIES = 100
-        self.search_queries = list(collections.OrderedDict.fromkeys(self.search_queries))[:MAX_SEARCH_QUERIES]
+        return list(collections.OrderedDict.fromkeys(search_queries))[:MAX_SEARCH_QUERIES]
 
     def _compile_smartcase_regex(self, regex):
         if regex.islower():
@@ -229,7 +225,7 @@ def validate_regex_to_color(config_filepath, regex_to_color):
             raise ExitFailure(os.EX_NOINPUT, err_msg)
 
 
-def load_regex_to_color_from_config(config_filepath):
+def load_regex_to_color_from_config_file(config_filepath):
     try:
         config_file = open(config_filepath, 'r')
     except EnvironmentError:
@@ -281,11 +277,11 @@ class RegexColorer:
 
 
 class TailMode:
-    def __init__(self, screen, term_dims, file_iter, regex_colorer):
+    def __init__(self, screen, term_dims, file_iter, screen_drawer):
         self.screen = screen
         self.term_dims = term_dims
         self.file_iter = file_iter
-        self.regex_colorer = regex_colorer
+        self.screen_drawer = screen_drawer
 
     def start_tailing(self):
         try:
@@ -304,16 +300,18 @@ class TailMode:
 
     def _redraw_last_page(self):
         self.file_iter.seek_to_last_page()
-        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter,
-                      'Waiting for data... (interrupt to abort)'[:self.term_dims.cols - 2])
+        self.screen_drawer.redraw_screen('Waiting for data... (interrupt to abort)')
 
 
 class SearchMode:
-    def __init__(self, screen, term_dims, file_iter, regex_colorer, search_history):
-        self.screen = screen
+    SEARCH_FORWARDS_CHAR = '/'
+    SEARCH_BACKWARDS_CHAR = '?'
+
+    def __init__(self, term_dims, screen, file_iter, screen_drawer, search_history):
         self.term_dims = term_dims
-        self.regex_colorer = regex_colorer
+        self.screen = screen
         self.file_iter = file_iter
+        self.screen_drawer = screen_drawer
         self.search_history = search_history
         self.last_search_direction_char = None
 
@@ -348,17 +346,17 @@ class SearchMode:
             self.file_iter.seek(position)
 
     def _continue_search(self):
-        if self.last_search_direction_char == SEARCH_FORWARDS_CHAR:
+        if self.last_search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
             return self._search_forwards()
-        elif self.last_search_direction_char == SEARCH_BACKWARDS_CHAR:
+        elif self.last_search_direction_char == SearchMode.SEARCH_BACKWARDS_CHAR:
             return self._search_backwards()
         else:
             return False
 
     def _continue_reverse_search(self):
-        if self.last_search_direction_char == SEARCH_FORWARDS_CHAR:
+        if self.last_search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
             return self._search_backwards()
-        elif self.last_search_direction_char == SEARCH_BACKWARDS_CHAR:
+        elif self.last_search_direction_char == SearchMode.SEARCH_BACKWARDS_CHAR:
             return self._search_forwards()
         else:
             return False
@@ -388,14 +386,14 @@ class SearchMode:
         search_queries = self.search_history.get_search_queries()
         search_history_index = -1
         KEY_DELETE = 127
-        redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
+        self.screen_drawer.redraw_screen(search_direction_char)
         while True:
             user_input = self.screen.getch()
             if user_input == ord('\n'):
                 break
             elif user_input == curses.KEY_RESIZE:
                 self.term_dims.update(self.screen)
-                redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
+                self.screen_drawer.redraw_screen(search_direction_char)
             elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
                 search_prefix = search_prefix[:-1]
             elif 0 <= user_input <= 255:
@@ -410,7 +408,7 @@ class SearchMode:
             elif user_input == curses.KEY_DOWN and search_history_index > 0:
                 search_history_index -= 1
                 search_prefix, search_suffix = search_queries[search_history_index], ''
-            redraw_screen(self.screen, self.term_dims, self.regex_colorer, self.file_iter, search_direction_char)
+            self.screen_drawer.redraw_screen(search_direction_char)
             self.screen.move(self.term_dims.rows, 1)
             self.screen.clrtoeol()
             search_query = search_prefix + search_suffix
@@ -421,43 +419,49 @@ class SearchMode:
         return search_prefix + search_suffix
 
 
-def wrap(line, cols):
-    return [line[i:i + cols] for i in range(0, len(line), cols)]
+class ScreenDrawer:
+    def __init__(self, screen, term_dims, regex_colorer, file_iter):
+        self.screen = screen
+        self.term_dims = term_dims
+        self.regex_colorer = regex_colorer
+        self.file_iter = file_iter
 
-
-def distinct_colors(wrapped_colored_line):
-    return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
-
-
-def draw_colored_line(screen, row, wrapped_line, wrapped_colored_line):
-    col = 0
-    for color, length in distinct_colors(wrapped_colored_line):
-        if color != 0:
-            screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
-        col += length
-
-
-def redraw_screen(screen, term_dims, regex_colorer, file_iter, prompt):
-    screen.move(0, 0)
-    row = 0
-    screen.erase()
-    for i, line in enumerate(file_iter.peek_next_lines(term_dims.rows)):
-        if not line or row == term_dims.rows:
-            break
-        line = sanitize_line(line)
-        if i == 0:
-            line = line[file_iter.line_col:]
-        colored_line = regex_colorer.color_line(line)
-        wrapped_lines = wrap(line, term_dims.cols)
-        wrapped_colored_lines = wrap(colored_line, term_dims.cols)
-        for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
-            if row == term_dims.rows:
+    def redraw_screen(self, prompt):
+        self.screen.move(0, 0)
+        row = 0
+        self.screen.erase()
+        for i, line in enumerate(self.file_iter.peek_next_lines(self.term_dims.rows)):
+            if not line or row == self.term_dims.rows:
                 break
-            screen.addstr(row, 0, wrapped_line)
-            draw_colored_line(screen, row, wrapped_line, wrapped_colored_line)
-            row += 1
-    screen.addstr(term_dims.rows, 0, prompt)
-    screen.refresh()
+            line = sanitize_line(line)
+            if i == 0:
+                line = line[self.file_iter.line_col:]
+            colored_line = self.regex_colorer.color_line(line)
+            wrapped_lines = self._wrap(line, self.term_dims.cols)
+            wrapped_colored_lines = self._wrap(colored_line, self.term_dims.cols)
+            for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
+                if row == self.term_dims.rows:
+                    break
+                self.screen.addstr(row, 0, wrapped_line)
+                self._draw_colored_line(row, wrapped_line, wrapped_colored_line)
+                row += 1
+        self.screen.addstr(self.term_dims.rows, 0, prompt[:self.term_dims.cols - 2])
+        self.screen.refresh()
+
+    def _wrap(self, line, cols):
+        return [line[i:i + cols] for i in range(0, len(line), cols)]
+
+
+    def _distinct_colors(self, wrapped_colored_line):
+        return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
+
+
+    def _draw_colored_line(self, row, wrapped_line, wrapped_colored_line):
+        col = 0
+        for color, length in self._distinct_colors(wrapped_colored_line):
+            if color != 0:
+                self.screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
+            col += length
 
 
 def run_curses(screen, input_file, config_filepath):
@@ -466,15 +470,16 @@ def run_curses(screen, input_file, config_filepath):
     curses.curs_set(VERY_VISIBLE)
     search_queries = load_search_queries_from_search_history_file()
     search_history = SearchHistory(search_queries)
-    regex_to_color = load_regex_to_color_from_config(config_filepath) if config_filepath else {}
+    regex_to_color = load_regex_to_color_from_config_file(config_filepath) if config_filepath else {}
     regex_colorer = RegexColorer(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
-    search_mode = SearchMode(screen, term_dims, file_iter, regex_colorer, search_history)
-    tail_mode = TailMode(screen, term_dims, file_iter, regex_colorer)
+    screen_drawer = ScreenDrawer(screen, term_dims, regex_colorer, file_iter)
+    search_mode = SearchMode(term_dims, screen, file_iter, screen_drawer, search_history)
+    tail_mode = TailMode(screen, term_dims, file_iter, screen_drawer)
     while True:
         try:
-            redraw_screen(screen, term_dims, regex_colorer, file_iter, ':')
+            screen_drawer.redraw_screen(':')
             user_input = screen.getch()
             if user_input == ord('q'):
                 return os.EX_OK
@@ -504,10 +509,10 @@ def run_curses(screen, input_file, config_filepath):
                 file_iter.seek_to_percentage_of_file(0.75)
             elif user_input == ord('F'):
                 tail_mode.start_tailing()
-            elif user_input == ord(SEARCH_FORWARDS_CHAR):
-                search_mode.start_new_search(SEARCH_FORWARDS_CHAR)
-            elif user_input == ord(SEARCH_BACKWARDS_CHAR):
-                search_mode.start_new_search(SEARCH_BACKWARDS_CHAR)
+            elif user_input == ord(SearchMode.SEARCH_FORWARDS_CHAR):
+                search_mode.start_new_search(SearchMode.SEARCH_FORWARDS_CHAR)
+            elif user_input == ord(SearchMode.SEARCH_BACKWARDS_CHAR):
+                search_mode.start_new_search(SearchMode.SEARCH_BACKWARDS_CHAR)
             elif user_input == ord('n'):
                 search_mode.continue_search()
             elif user_input == ord('N'):
