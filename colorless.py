@@ -213,41 +213,47 @@ class FileIterator:
         self.input_file.seek(0, os.SEEK_END)
 
 
-def validate_regex_to_color(config_filepath, regex_to_color):
-    MAX_COLORS = 255
-    if len(regex_to_color) > MAX_COLORS:
-        err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(config_filepath, MAX_COLORS, len(regex_to_color))
-        raise ExitFailure(os.EX_NOINPUT, err_msg)
-    for regex, color in regex_to_color.items():
-        if color < 0 or color > 255:
-            err_msg = '{}: (regex: {}, color: {}) is invalid - color must be in the range [0, {}]'.format(config_filepath, regex, color, MAX_COLORS)
-            raise ExitFailure(os.EX_NOINPUT, err_msg)
+class ConfigFileReader:
+    def __init__(self, config_filepath):
+        self.config_filepath = config_filepath
 
-
-def load_regex_to_color_from_config_file(config_filepath):
-    try:
-        config_file = open(config_filepath, 'r')
-    except EnvironmentError:
-        raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
-    config = {}
-    with config_file:
+    def load_regex_to_color(self):
+        if not self.config_filepath:
+            return {}
         try:
-            exec(config_file.read(), config)
-        except Exception as exception:
-            raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, exception))
-    REGEX_TO_COLOR = 'regex_to_color'
-    if REGEX_TO_COLOR not in config:
-        err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
-        raise ExitFailure(os.EX_NOINPUT, err_msg)
-    regex_to_color = config[REGEX_TO_COLOR]
-    validate_regex_to_color(config_filepath, regex_to_color)
-    regex_to_color = collections.OrderedDict()
-    STARTING_COLOR_ID = 1
-    for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
-        regex_to_color[re.compile(compile_regex(regex))] = color_id
-        DEFAULT_BACKGROUND_COLOR = -1
-        curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
-    return regex_to_color
+            config_file = open(self.config_filepath, 'r')
+        except EnvironmentError:
+            raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(config_filepath))
+        config = {}
+        with config_file:
+            try:
+                exec(config_file.read(), config)
+            except Exception as exception:
+                raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(config_filepath, exception))
+        REGEX_TO_COLOR = 'regex_to_color'
+        if REGEX_TO_COLOR not in config:
+            err_msg = '{}: The config must contain a dictionary named {}'.format(config_filepath, REGEX_TO_COLOR)
+            raise ExitFailure(os.EX_NOINPUT, err_msg)
+        regex_to_color = config[REGEX_TO_COLOR]
+        self._validate_regex_to_color(regex_to_color)
+        regex_to_color = collections.OrderedDict()
+        STARTING_COLOR_ID = 1
+        for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
+            regex_to_color[re.compile(compile_regex(regex))] = color_id
+            DEFAULT_BACKGROUND_COLOR = -1
+            curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
+        return regex_to_color
+
+    def _validate_regex_to_color(self, regex_to_color):
+        MAX_COLORS = 255
+        if len(regex_to_color) > MAX_COLORS:
+            err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(self.config_filepath, MAX_COLORS, len(regex_to_color))
+            raise ExitFailure(os.EX_NOINPUT, err_msg)
+        for regex, color in regex_to_color.items():
+            if color < 0 or color > 255:
+                err_msg = '{}: (regex: {}, color: {}) is invalid - color must be in the range [0, {}]'.format(
+                    self.config_filepath, regex, color, MAX_COLORS)
+                raise ExitFailure(os.EX_NOINPUT, err_msg)
 
 
 class ColorMaskGenerator:
@@ -468,7 +474,8 @@ def run_curses(screen, input_file, config_filepath):
     search_history_file = SearchHistoryFile()
     search_queries = search_history_file.load_search_queries()
     search_history = SearchHistory(search_queries)
-    regex_to_color = load_regex_to_color_from_config_file(config_filepath) if config_filepath else {}
+    config_file_reader = ConfigFileReader(config_filepath)
+    regex_to_color = config_file_reader.load_regex_to_color()
     color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
