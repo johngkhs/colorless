@@ -55,11 +55,19 @@ class SearchHistoryFile:
             search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
-def compile_regex(regex, flags=0):
-    try:
-        return re.compile(r'({0})'.format(regex), flags)
-    except re.error as exception:
-        raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+class RegexCompiler:
+    @staticmethod
+    def compile_regex(regex, flags=0):
+        try:
+            return re.compile(r'({0})'.format(regex), flags)
+        except re.error as exception:
+            raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+
+    @staticmethod
+    def compile_smartcase_regex(regex):
+        if regex.islower():
+            return RegexCompiler.compile_regex(regex, re.IGNORECASE)
+        return RegexCompiler.compile_regex(regex)
 
 
 def sanitize_line(line):
@@ -68,29 +76,24 @@ def sanitize_line(line):
 
 class SearchHistory:
     def __init__(self, search_queries):
-        UNMATCHABLE_COMPILED_REGEX = re.compile('a^')
-        self.last_search_query_as_compiled_regex = UNMATCHABLE_COMPILED_REGEX
+        self.last_search_query = None
         self.search_queries = search_queries
 
-    def get_last_search_query_as_compiled_regex(self):
-        return self.last_search_query_as_compiled_regex
+    def get_last_search_query(self):
+        return self.last_search_query
 
     def get_search_queries(self):
         return self.search_queries
 
     def insert_search_query(self, search_query):
-        self.last_search_query_as_compiled_regex = self._compile_smartcase_regex(search_query)
+        self.last_search_query = search_query
         self.search_queries.insert(0, search_query)
-        self.search_queries = self._filter_duplicate_search_queries(self.search_queries)
+        self.search_queries = SearchHistory._filter_duplicate_search_queries(self.search_queries)
 
-    def _filter_duplicate_search_queries(self, search_queries):
+    @staticmethod
+    def _filter_duplicate_search_queries(search_queries):
         MAX_SEARCH_QUERIES = 100
         return list(collections.OrderedDict.fromkeys(search_queries))[:MAX_SEARCH_QUERIES]
-
-    def _compile_smartcase_regex(self, regex):
-        if regex.islower():
-            return compile_regex(regex, re.IGNORECASE)
-        return compile_regex(regex)
 
 
 class FileIterator:
@@ -235,24 +238,25 @@ class ConfigFileReader:
             err_msg = '{}: The config must contain a dictionary named {}'.format(self.config_filepath, REGEX_TO_COLOR)
             raise ExitFailure(os.EX_NOINPUT, err_msg)
         regex_to_color = config[REGEX_TO_COLOR]
-        self._validate_regex_to_color(regex_to_color)
+        ConfigFileReader._validate_regex_to_color(self.config_filepath, regex_to_color)
         regex_to_color = collections.OrderedDict()
         STARTING_COLOR_ID = 1
         for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
-            regex_to_color[re.compile(compile_regex(regex))] = color_id
+            regex_to_color[RegexCompiler.compile_regex(regex)] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
         return regex_to_color
 
-    def _validate_regex_to_color(self, regex_to_color):
+    @staticmethod
+    def _validate_regex_to_color(config_filepath, regex_to_color):
         MAX_COLORS = 255
         if len(regex_to_color) > MAX_COLORS:
-            err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(self.config_filepath, MAX_COLORS, len(regex_to_color))
+            err_msg = '{}: A maximum of {} regexes are supported but found {}'.format(config_filepath, MAX_COLORS, len(regex_to_color))
             raise ExitFailure(os.EX_NOINPUT, err_msg)
         for regex, color in regex_to_color.items():
             if color < 0 or color > 255:
                 err_msg = '{}: (regex: {}, color: {}) is invalid - color must be in the range [0, {}]'.format(
-                    self.config_filepath, regex, color, MAX_COLORS)
+                    config_filepath, regex, color, MAX_COLORS)
                 raise ExitFailure(os.EX_NOINPUT, err_msg)
 
 
@@ -279,7 +283,9 @@ class ColorMaskGenerator:
 
     def _regex_to_color_including_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
-        regex_to_color[self.search_history.get_last_search_query_as_compiled_regex()] = self.SEARCH_COLOR
+        last_search_query = self.search_history.get_last_search_query()
+        if last_search_query:
+            regex_to_color[RegexCompiler.compile_smartcase_regex(last_search_query)] = self.SEARCH_COLOR
         return regex_to_color.items()
 
 
@@ -369,7 +375,7 @@ class SearchMode:
             return False
 
     def _search_forwards(self):
-        compiled_search_query_regex = self.search_history.get_last_search_query_as_compiled_regex()
+        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(self.search_history.get_last_search_query())
         next(self.file_iter.next_line_iterator())
         for line in self.file_iter.next_line_iterator():
             if not line:
@@ -380,7 +386,7 @@ class SearchMode:
                 return True
 
     def _search_backwards(self):
-        compiled_search_query_regex = self.search_history.get_last_search_query_as_compiled_regex()
+        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(self.search_history.get_last_search_query())
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
