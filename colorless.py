@@ -251,24 +251,26 @@ def load_regex_to_color_from_config_file(config_filepath):
     return regex_to_color
 
 
-class RegexColorer:
+class ColorMaskGenerator:
+    NO_COLOR = 0
+
     def __init__(self, regex_to_color, search_history):
         self.regex_to_color = regex_to_color
         self.search_history = search_history
         self.SEARCH_COLOR = 255
         curses.init_pair(self.SEARCH_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
-    def color_line(self, line):
-        colored_line = [0] * len(line)
+    def generate_color_mask(self, line):
+        color_mask = [ColorMaskGenerator.NO_COLOR] * len(line)
         for compiled_regex, color in self._regex_to_color_including_last_search_query():
             tokens = compiled_regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
                 token_matches_regex = (index % 2 == 1)
                 if token_matches_regex:
-                    colored_line[col:col + len(token)] = [color] * len(token)
+                    color_mask[col:col + len(token)] = [color] * len(token)
                 col += len(token)
-        return colored_line
+        return color_mask
 
     def _regex_to_color_including_last_search_query(self):
         regex_to_color = collections.OrderedDict(self.regex_to_color.items())
@@ -287,7 +289,6 @@ class TailMode:
         try:
             file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
             while True:
-                self.term_dims.update(self.screen)
                 self._redraw_last_page()
                 new_file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
                 if file_size_in_bytes == new_file_size_in_bytes:
@@ -391,9 +392,6 @@ class SearchMode:
             user_input = self.screen.getch()
             if user_input == ord('\n'):
                 break
-            elif user_input == curses.KEY_RESIZE:
-                self.term_dims.update(self.screen)
-                self.screen_drawer.redraw_screen(search_direction_char)
             elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
                 search_prefix = search_prefix[:-1]
             elif 0 <= user_input <= 255:
@@ -420,13 +418,14 @@ class SearchMode:
 
 
 class ScreenDrawer:
-    def __init__(self, screen, term_dims, regex_colorer, file_iter):
+    def __init__(self, screen, term_dims, color_mask_generator, file_iter):
         self.screen = screen
         self.term_dims = term_dims
-        self.regex_colorer = regex_colorer
+        self.color_mask_generator = color_mask_generator
         self.file_iter = file_iter
 
     def redraw_screen(self, prompt):
+        self.term_dims.update(self.screen)
         self.screen.move(0, 0)
         row = 0
         self.screen.erase()
@@ -436,9 +435,9 @@ class ScreenDrawer:
             line = sanitize_line(line)
             if i == 0:
                 line = line[self.file_iter.line_col:]
-            colored_line = self.regex_colorer.color_line(line)
+            color_mask = self.color_mask_generator.generate_color_mask(line)
             wrapped_lines = self._wrap(line, self.term_dims.cols)
-            wrapped_colored_lines = self._wrap(colored_line, self.term_dims.cols)
+            wrapped_colored_lines = self._wrap(color_mask, self.term_dims.cols)
             for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
                 if row == self.term_dims.rows:
                     break
@@ -471,10 +470,10 @@ def run_curses(screen, input_file, config_filepath):
     search_queries = load_search_queries_from_search_history_file()
     search_history = SearchHistory(search_queries)
     regex_to_color = load_regex_to_color_from_config_file(config_filepath) if config_filepath else {}
-    regex_colorer = RegexColorer(regex_to_color, search_history)
+    color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
-    screen_drawer = ScreenDrawer(screen, term_dims, regex_colorer, file_iter)
+    screen_drawer = ScreenDrawer(screen, term_dims, color_mask_generator, file_iter)
     search_mode = SearchMode(term_dims, screen, file_iter, screen_drawer, search_history)
     tail_mode = TailMode(screen, term_dims, file_iter, screen_drawer)
     while True:
@@ -483,8 +482,6 @@ def run_curses(screen, input_file, config_filepath):
             user_input = screen.getch()
             if user_input == ord('q'):
                 return os.EX_OK
-            elif user_input == curses.KEY_RESIZE:
-                term_dims.update(screen)
             elif user_input == ord('j'):
                 file_iter.seek_next_wrapped_lines(1)
             elif user_input == ord('k'):
