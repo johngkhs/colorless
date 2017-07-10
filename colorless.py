@@ -33,27 +33,26 @@ class TerminalDimensions:
         self.cols = term_dimensions[1]
 
 
-def get_search_history_filepath():
-    return os.path.join(os.path.expanduser('~'), '.colorless_search_history')
+class SearchHistoryFile:
+    def __init__(self):
+        self.search_history_filepath = os.path.join(os.path.expanduser('~'), '.colorless_search_history')
 
+    def load_search_queries(self):
+        try:
+            search_history_file = open(self.search_history_filepath, 'a+')
+        except EnvironmentError:
+            return []
+        with search_history_file:
+            search_history_file.seek(0)
+            return [line.rstrip('\n') for line in search_history_file.readlines()]
 
-def load_search_queries_from_search_history_file():
-    try:
-        search_history_file = open(get_search_history_filepath(), 'a+')
-    except EnvironmentError:
-        return []
-    with search_history_file:
-        search_history_file.seek(0)
-        return [line.rstrip('\n') for line in search_history_file.readlines()]
-
-
-def write_search_queries_to_search_history_file(search_queries):
-    try:
-        search_history_file = open(get_search_history_filepath(), 'w')
-    except EnvironmentError:
-        return
-    with search_history_file:
-        search_history_file.writelines(search_query + '\n' for search_query in search_queries)
+    def write_search_queries(self, search_queries):
+        try:
+            search_history_file = open(self.search_history_filepath, 'w')
+        except EnvironmentError:
+            return
+        with search_history_file:
+            search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
 
 def compile_regex(regex, flags=0):
@@ -308,12 +307,13 @@ class SearchMode:
     SEARCH_FORWARDS_CHAR = '/'
     SEARCH_BACKWARDS_CHAR = '?'
 
-    def __init__(self, term_dims, screen, file_iter, screen_drawer, search_history):
+    def __init__(self, term_dims, screen, file_iter, screen_drawer, search_history, search_history_file):
         self.term_dims = term_dims
         self.screen = screen
         self.file_iter = file_iter
         self.screen_drawer = screen_drawer
         self.search_history = search_history
+        self.search_history_file = search_history_file
         self.last_search_direction_char = None
 
     def start_new_search(self, search_direction_char):
@@ -325,7 +325,7 @@ class SearchMode:
         if not search_query:
             return
         self.search_history.insert_search_query(search_query)
-        write_search_queries_to_search_history_file(self.search_history.get_search_queries())
+        self.search_history_file.write_search_queries(self.search_history.get_search_queries())
         self.last_search_direction_char = search_direction_char
         self.continue_search()
 
@@ -465,14 +465,15 @@ def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
-    search_queries = load_search_queries_from_search_history_file()
+    search_history_file = SearchHistoryFile()
+    search_queries = search_history_file.load_search_queries()
     search_history = SearchHistory(search_queries)
     regex_to_color = load_regex_to_color_from_config_file(config_filepath) if config_filepath else {}
     color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     screen_drawer = ScreenDrawer(screen, term_dims, color_mask_generator, file_iter)
-    search_mode = SearchMode(term_dims, screen, file_iter, screen_drawer, search_history)
+    search_mode = SearchMode(term_dims, screen, file_iter, screen_drawer, search_history, search_history_file)
     tail_mode = TailMode(screen, term_dims, file_iter, screen_drawer)
     while True:
         try:
