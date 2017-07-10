@@ -450,10 +450,8 @@ class ScreenDrawer:
     def _wrap(self, line, cols):
         return [line[i:i + cols] for i in range(0, len(line), cols)]
 
-
     def _distinct_colors(self, wrapped_colored_line):
         return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_colored_line)]
-
 
     def _draw_colored_line(self, row, wrapped_line, wrapped_colored_line):
         col = 0
