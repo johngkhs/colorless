@@ -437,8 +437,8 @@ class ScreenDrawer:
                 line = line[self.file_iter.line_col:]
             color_mask = self.color_mask_generator.generate_color_mask(line)
             wrapped_lines = self._wrap(line, self.term_dims.cols)
-            wrapped_colored_lines = self._wrap(color_mask, self.term_dims.cols)
-            for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_colored_lines):
+            wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
+            for (wrapped_line, wrapped_colored_line) in zip(wrapped_lines, wrapped_color_masks):
                 if row == self.term_dims.rows:
                     break
                 self.screen.addstr(row, 0, wrapped_line)
