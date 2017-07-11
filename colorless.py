@@ -293,8 +293,7 @@ class ColorMaskGenerator:
 
 
 class TailMode:
-    def __init__(self, term_dims, file_iter, screen_input_output):
-        self.term_dims = term_dims
+    def __init__(self, file_iter, screen_input_output):
         self.file_iter = file_iter
         self.screen_input_output = screen_input_output
 
@@ -321,8 +320,7 @@ class SearchMode:
     SEARCH_FORWARDS_CHAR = '/'
     SEARCH_BACKWARDS_CHAR = '?'
 
-    def __init__(self, term_dims, file_iter, screen_input_output, search_history):
-        self.term_dims = term_dims
+    def __init__(self, file_iter, screen_input_output, search_history):
         self.file_iter = file_iter
         self.screen_input_output = screen_input_output
         self.search_history = search_history
@@ -474,8 +472,8 @@ def run_curses(screen, input_file, config_filepath):
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
     screen_input_output = ScreenInputOutput(screen, term_dims, color_mask_generator, file_iter)
-    search_mode = SearchMode(term_dims, file_iter, screen_input_output, search_history)
-    tail_mode = TailMode(term_dims, file_iter, screen_input_output)
+    search_mode = SearchMode(file_iter, screen_input_output, search_history)
+    tail_mode = TailMode(file_iter, screen_input_output)
     while True:
         try:
             screen_input_output.redraw_screen(':')
