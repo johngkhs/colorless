@@ -293,11 +293,10 @@ class ColorMaskGenerator:
 
 
 class TailMode:
-    def __init__(self, screen, term_dims, file_iter, screen_drawer):
-        self.screen = screen
+    def __init__(self, term_dims, file_iter, screen_input_output):
         self.term_dims = term_dims
         self.file_iter = file_iter
-        self.screen_drawer = screen_drawer
+        self.screen_input_output = screen_input_output
 
     def start_tailing(self):
         try:
@@ -315,18 +314,17 @@ class TailMode:
 
     def _redraw_last_page(self):
         self.file_iter.seek_to_last_page()
-        self.screen_drawer.redraw_screen('Waiting for data... (interrupt to abort)')
+        self.screen_input_output.redraw_screen('Waiting for data... (interrupt to abort)')
 
 
 class SearchMode:
     SEARCH_FORWARDS_CHAR = '/'
     SEARCH_BACKWARDS_CHAR = '?'
 
-    def __init__(self, term_dims, screen, file_iter, screen_drawer, search_history):
+    def __init__(self, term_dims, file_iter, screen_input_output, search_history):
         self.term_dims = term_dims
-        self.screen = screen
         self.file_iter = file_iter
-        self.screen_drawer = screen_drawer
+        self.screen_input_output = screen_input_output
         self.search_history = search_history
         self._continue_search = lambda: False
         self._continue_reverse_search = lambda: False
@@ -390,9 +388,9 @@ class SearchMode:
         search_queries = self.search_history.get_search_queries()
         search_history_index = -1
         KEY_DELETE = 127
-        self.screen_drawer.redraw_screen(search_direction_char)
+        self.screen_input_output.redraw_screen(search_direction_char)
         while True:
-            user_input = self.screen.getch()
+            user_input = self.screen_input_output.get_user_input()
             if user_input == ord('\n'):
                 break
             elif user_input == KEY_DELETE or user_input == curses.KEY_BACKSPACE:
@@ -409,25 +407,19 @@ class SearchMode:
             elif user_input == curses.KEY_DOWN and search_history_index > 0:
                 search_history_index -= 1
                 search_prefix, search_suffix = search_queries[search_history_index], ''
-            self.screen_drawer.redraw_screen(search_direction_char)
-            self.screen.move(self.term_dims.rows, 1)
-            self.screen.clrtoeol()
             search_query = search_prefix + search_suffix
-            visible_search_query = search_query[:self.term_dims.cols - 2]
-            self.screen.addstr(self.term_dims.rows, 1, visible_search_query)
-            self.screen.move(self.term_dims.rows, min(len(search_prefix), self.term_dims.cols - 2) + 1)
-            self.screen.refresh()
+            self.screen_input_output.redraw_screen(search_direction_char + search_query, len(search_prefix) + 1)
         return search_prefix + search_suffix
 
 
-class ScreenDrawer:
+class ScreenInputOutput:
     def __init__(self, screen, term_dims, color_mask_generator, file_iter):
         self.screen = screen
         self.term_dims = term_dims
         self.color_mask_generator = color_mask_generator
         self.file_iter = file_iter
 
-    def redraw_screen(self, prompt):
+    def redraw_screen(self, prompt, cursor_position=None):
         self.term_dims.update(self.screen)
         self.screen.move(0, 0)
         row = 0
@@ -447,8 +439,14 @@ class ScreenDrawer:
                 self.screen.addstr(row, 0, wrapped_line)
                 self._draw_colored_line(row, wrapped_line, wrapped_color_mask)
                 row += 1
-        self.screen.addstr(self.term_dims.rows, 0, prompt[:self.term_dims.cols - 2])
+        last_visible_col = self.term_dims.cols - 2
+        self.screen.addstr(self.term_dims.rows, 0, prompt[:last_visible_col])
+        if cursor_position:
+            self.screen.move(self.term_dims.rows, min(cursor_position, last_visible_col))
         self.screen.refresh()
+
+    def get_user_input(self):
+        return self.screen.getch()
 
     def _wrap(self, line, cols):
         return [line[i:i + cols] for i in range(0, len(line), cols)]
@@ -475,13 +473,13 @@ def run_curses(screen, input_file, config_filepath):
     color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, term_dims)
-    screen_drawer = ScreenDrawer(screen, term_dims, color_mask_generator, file_iter)
-    search_mode = SearchMode(term_dims, screen, file_iter, screen_drawer, search_history)
-    tail_mode = TailMode(screen, term_dims, file_iter, screen_drawer)
+    screen_input_output = ScreenInputOutput(screen, term_dims, color_mask_generator, file_iter)
+    search_mode = SearchMode(term_dims, file_iter, screen_input_output, search_history)
+    tail_mode = TailMode(term_dims, file_iter, screen_input_output)
     while True:
         try:
-            screen_drawer.redraw_screen(':')
-            user_input = screen.getch()
+            screen_input_output.redraw_screen(':')
+            user_input = screen_input_output.get_user_input()
             if user_input == ord('q'):
                 return os.EX_OK
             elif user_input == ord('j'):
