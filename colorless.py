@@ -57,6 +57,7 @@ class SearchHistoryFile:
     def _get_search_history_filepath():
         return os.path.join(os.path.expanduser('~'), '.colorless_search_history')
 
+
 class RegexCompiler:
     @staticmethod
     def compile_regex(regex, flags=0):
@@ -327,7 +328,8 @@ class SearchMode:
         self.file_iter = file_iter
         self.screen_drawer = screen_drawer
         self.search_history = search_history
-        self.last_search_direction_char = None
+        self._continue_search = lambda: False
+        self._continue_reverse_search = lambda: False
 
     def start_new_search(self, search_direction_char):
         search_query = None
@@ -339,7 +341,13 @@ class SearchMode:
             return
         self.search_history.insert_search_query(search_query)
         SearchHistoryFile.write_search_queries(self.search_history.get_search_queries())
-        self.last_search_direction_char = search_direction_char
+        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(search_query)
+        if search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
+            self._continue_search = lambda: self._search_forwards(compiled_search_query_regex)
+            self._continue_reverse_search = lambda: self._search_backwards(compiled_search_query_regex)
+        elif search_direction_char == SearchMode.SEARCH_BACKWARDS_CHAR:
+            self._continue_search = lambda: self._search_backwards(compiled_search_query_regex)
+            self._continue_reverse_search = lambda: self._search_forwards(compiled_search_query_regex)
         self.continue_search()
 
     def continue_search(self):
@@ -359,24 +367,7 @@ class SearchMode:
         except KeyboardInterrupt:
             self.file_iter.seek(position)
 
-    def _continue_search(self):
-        if self.last_search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
-            return self._search_forwards()
-        elif self.last_search_direction_char == SearchMode.SEARCH_BACKWARDS_CHAR:
-            return self._search_backwards()
-        else:
-            return False
-
-    def _continue_reverse_search(self):
-        if self.last_search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
-            return self._search_backwards()
-        elif self.last_search_direction_char == SearchMode.SEARCH_BACKWARDS_CHAR:
-            return self._search_forwards()
-        else:
-            return False
-
-    def _search_forwards(self):
-        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(self.search_history.get_last_search_query())
+    def _search_forwards(self, compiled_search_query_regex):
         next(self.file_iter.next_line_iterator())
         for line in self.file_iter.next_line_iterator():
             if not line:
@@ -386,8 +377,7 @@ class SearchMode:
                 self.file_iter.clamp_position_to_last_page()
                 return True
 
-    def _search_backwards(self):
-        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(self.search_history.get_last_search_query())
+    def _search_backwards(self, compiled_search_query_regex):
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
