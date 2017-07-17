@@ -99,6 +99,12 @@ class SearchHistory:
         return list(collections.OrderedDict.fromkeys(search_queries))[:MAX_SEARCH_QUERIES]
 
 
+class FileBookmark:
+    def __init__(self, byte_offset, line_col):
+        self.byte_offset = byte_offset
+        self.line_col = line_col
+
+
 class FileIterator:
     def __init__(self, input_file, term_dims):
         self.input_file = input_file
@@ -106,18 +112,25 @@ class FileIterator:
         self.term_dims = term_dims
 
     def peek_next_lines(self, count):
-        position = self.input_file.tell()
+        bookmark = self.get_bookmark()
         lines = [self.input_file.readline() for _ in range(count)]
-        self.input_file.seek(position)
+        self.go_to_bookmark(bookmark)
         return lines
 
-    def peek_file_size_in_bytes(self):
-        position, line_col = self.input_file.tell(), self.line_col
-        self._seek_to_end_of_file()
-        file_size_in_bytes = self.input_file.tell()
-        self.input_file.seek(position)
-        self.line_col = line_col
-        return file_size_in_bytes
+    def get_bookmark(self):
+        return FileBookmark(self.input_file.tell(), self.line_col)
+
+    def go_to_bookmark(self, bookmark):
+        self.input_file.seek(bookmark.byte_offset)
+        self.line_col = bookmark.line_col
+
+    def seek_to_start_of_file(self):
+        self.line_col = 0
+        self.input_file.seek(0)
+
+    def seek_to_end_of_file(self):
+        self.line_col = 0
+        self.input_file.seek(0, os.SEEK_END)
 
     def prev_line_iterator(self):
         if self.input_file.tell() == 0:
@@ -150,6 +163,8 @@ class FileIterator:
                 return
             yield line
 
+    # Move to new class
+
     def seek_to_percentage_of_file(self, percentage):
         assert 0.0 <= percentage <= 1.0
         file_size_in_bytes = self.peek_file_size_in_bytes()
@@ -157,21 +172,12 @@ class FileIterator:
         next(self.prev_line_iterator())
         self.clamp_position_to_last_page()
 
-    def tell(self):
-        return self.input_file.tell()
-
-    def seek(self, position):
-        self.input_file.seek(position, os.SEEK_SET)
-
-    def seek_to_start_of_file(self):
-        self.seek(0)
-
     def seek_prev_wrapped_lines(self, count):
         for _ in range(count):
             self._seek_prev_wrapped_line()
 
     def seek_to_last_page(self):
-        self._seek_to_end_of_file()
+        self.seek_to_end_of_file()
         self.seek_prev_wrapped_lines(self.term_dims.rows)
 
     def clamp_position_to_last_page(self):
@@ -213,10 +219,6 @@ class FileIterator:
             for line_col in reversed(range(0, len(sanitized_line), self.term_dims.cols)):
                 self.line_col = line_col
                 break
-
-    def _seek_to_end_of_file(self):
-        self.line_col = 0
-        self.input_file.seek(0, os.SEEK_END)
 
 
 class ConfigFileReader:
@@ -299,15 +301,10 @@ class TailMode:
 
     def start_tailing(self):
         try:
-            file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
             while True:
                 self._redraw_last_page()
-                new_file_size_in_bytes = self.file_iter.peek_file_size_in_bytes()
-                if file_size_in_bytes == new_file_size_in_bytes:
-                    ONE_HUNDRED_MILLIS = 0.100
-                    time.sleep(ONE_HUNDRED_MILLIS)
-                else:
-                    file_size_in_bytes = new_file_size_in_bytes
+                FIFTY_MILLIS = 0.050
+                time.sleep(FIFTY_MILLIS)
         except KeyboardInterrupt:
             pass
 
@@ -353,13 +350,11 @@ class SearchMode:
         self._search_with_interrupt_handling(self._continue_reverse_search)
 
     def _search_with_interrupt_handling(self, search_function):
-        position = self.file_iter.tell()
+        bookmark = self.file_iter.get_bookmark()
         try:
             search_succeeded = search_function()
-            if search_succeeded:
-                self.file_iter.line_col = 0
-            else:
-                self.file_iter.seek(position)
+            if not search_succeeded:
+                self.file_iter.go_to_bookmark(bookmark)
         except KeyboardInterrupt:
             self.file_iter.seek(position)
 
