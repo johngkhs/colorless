@@ -37,7 +37,7 @@ class SearchHistoryFile:
     @staticmethod
     def load_search_queries():
         try:
-            search_history_file = open(SearchHistoryFile._get_search_history_filepath(), 'a+')
+            search_history_file = open(SearchHistoryFile._get_filepath(), 'a+')
         except EnvironmentError:
             return []
         with search_history_file:
@@ -47,14 +47,14 @@ class SearchHistoryFile:
     @staticmethod
     def write_search_queries(search_queries):
         try:
-            search_history_file = open(SearchHistoryFile._get_search_history_filepath(), 'w')
+            search_history_file = open(SearchHistoryFile._get_filepath(), 'w')
         except EnvironmentError:
             return
         with search_history_file:
             search_history_file.writelines(search_query + '\n' for search_query in search_queries)
 
     @staticmethod
-    def _get_search_history_filepath():
+    def _get_filepath():
         return os.path.join(os.path.expanduser('~'), '.colorless_search_history')
 
 
@@ -230,7 +230,7 @@ class ConfigFileReader:
     def __init__(self, config_filepath):
         self.config_filepath = config_filepath
 
-    def load_regex_to_color(self):
+    def load_regex_to_color_id(self):
         if not self.config_filepath:
             return {}
         try:
@@ -249,13 +249,13 @@ class ConfigFileReader:
             raise ExitFailure(os.EX_NOINPUT, err_msg)
         regex_to_color = config[REGEX_TO_COLOR]
         ConfigFileReader._validate_regex_to_color(self.config_filepath, regex_to_color)
-        regex_to_color = collections.OrderedDict()
+        regex_to_color_id = collections.OrderedDict()
         STARTING_COLOR_ID = 1
-        for color_id, (regex, color) in enumerate(config[REGEX_TO_COLOR].items(), STARTING_COLOR_ID):
-            regex_to_color[RegexCompiler.compile_regex(regex)] = color_id
+        for color_id, (regex, color) in enumerate(regex_to_color.items(), STARTING_COLOR_ID):
+            regex_to_color_id[RegexCompiler.compile_regex(regex)] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
-        return regex_to_color
+        return regex_to_color_id
 
     @staticmethod
     def _validate_regex_to_color(config_filepath, regex_to_color):
@@ -270,17 +270,17 @@ class ConfigFileReader:
                 raise ExitFailure(os.EX_NOINPUT, err_msg)
 
 
-class ColorMaskGenerator:
-    NO_COLOR = 0
+class LineColorMaskCalculator:
+    NO_COLOR_ID = 0
 
-    def __init__(self, regex_to_color, search_history):
-        self.regex_to_color = regex_to_color
+    def __init__(self, regex_to_color_id, search_history):
+        self.regex_to_color_id = regex_to_color_id
         self.search_history = search_history
-        self.SEARCH_COLOR = 255
-        curses.init_pair(self.SEARCH_COLOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+        self.SEARCH_COLOR_ID = 255
+        curses.init_pair(self.SEARCH_COLOR_ID, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
-    def generate_color_mask(self, line):
-        color_mask = [ColorMaskGenerator.NO_COLOR] * len(line)
+    def get_line_color_mask(self, line):
+        color_mask = [LineColorMaskCalculator.NO_COLOR_ID] * len(line)
         for compiled_regex, color in self._regex_to_color_including_last_search_query():
             tokens = compiled_regex.split(line)
             col = 0
@@ -292,11 +292,11 @@ class ColorMaskGenerator:
         return color_mask
 
     def _regex_to_color_including_last_search_query(self):
-        regex_to_color = collections.OrderedDict(self.regex_to_color.items())
+        regex_to_color_id = collections.OrderedDict(self.regex_to_color_id.items())
         last_search_query = self.search_history.get_last_search_query()
         if last_search_query:
-            regex_to_color[RegexCompiler.compile_smartcase_regex(last_search_query)] = self.SEARCH_COLOR
-        return regex_to_color.items()
+            regex_to_color_id[RegexCompiler.compile_smartcase_regex(last_search_query)] = self.SEARCH_COLOR_ID
+        return regex_to_color_id.items()
 
 
 class TailMode:
@@ -307,15 +307,12 @@ class TailMode:
     def start_tailing(self):
         try:
             while True:
-                self._redraw_last_page()
+                self.file_iter.seek_to_last_page()
+                self.screen_input_output.redraw_screen('Waiting for data... (interrupt to abort)')
                 FIFTY_MILLIS = 0.050
                 time.sleep(FIFTY_MILLIS)
         except KeyboardInterrupt:
             pass
-
-    def _redraw_last_page(self):
-        self.file_iter.seek_to_last_page()
-        self.screen_input_output.redraw_screen('Waiting for data... (interrupt to abort)')
 
 
 class SearchMode:
@@ -412,11 +409,11 @@ class SearchMode:
 
 
 class ScreenInputOutput:
-    def __init__(self, screen, term_dims, line_decoder, color_mask_generator, file_iter):
+    def __init__(self, screen, term_dims, line_decoder, line_color_mask_calculator, file_iter):
         self.screen = screen
         self.term_dims = term_dims
         self.line_decoder = line_decoder
-        self.color_mask_generator = color_mask_generator
+        self.line_color_mask_calculator = line_color_mask_calculator
         self.file_iter = file_iter
 
     def redraw_screen(self, prompt, cursor_position=None):
@@ -430,7 +427,7 @@ class ScreenInputOutput:
             line = self.line_decoder.decode_line(line)
             if i == 0:
                 line = line[self.file_iter.line_col:]
-            color_mask = self.color_mask_generator.generate_color_mask(line)
+            color_mask = self.line_color_mask_calculator.get_line_color_mask(line)
             wrapped_lines = self._wrap(line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
             for (wrapped_line, wrapped_color_mask) in zip(wrapped_lines, wrapped_color_masks):
@@ -471,11 +468,11 @@ def run_curses(screen, input_file, config_filepath):
     search_queries = SearchHistoryFile.load_search_queries()
     search_history = SearchHistory(search_queries)
     config_file_reader = ConfigFileReader(config_filepath)
-    regex_to_color = config_file_reader.load_regex_to_color()
-    color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
+    regex_to_color_id = config_file_reader.load_regex_to_color_id()
+    line_color_mask_calculator = LineColorMaskCalculator(regex_to_color_id, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, line_decoder, term_dims)
-    screen_input_output = ScreenInputOutput(screen, term_dims, line_decoder, color_mask_generator, file_iter)
+    screen_input_output = ScreenInputOutput(screen, term_dims, line_decoder, line_color_mask_calculator, file_iter)
     search_mode = SearchMode(file_iter, line_decoder, screen_input_output, search_history)
     tail_mode = TailMode(file_iter, screen_input_output)
     while True:
