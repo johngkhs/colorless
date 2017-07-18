@@ -73,8 +73,12 @@ class RegexCompiler:
         return RegexCompiler.compile_regex(regex)
 
 
-def sanitize_line(line):
-    return line.decode(locale.getpreferredencoding(False)).replace('\x01', '\\x01').replace('\t', '    ')
+class LineDecoder:
+    def __init__(self, encoding):
+        self.encoding = encoding
+
+    def decode_line(self, line):
+        return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
 
 
 class SearchHistory:
@@ -106,9 +110,10 @@ class FileBookmark:
 
 
 class FileIterator:
-    def __init__(self, input_file, term_dims):
+    def __init__(self, input_file, line_decoder, term_dims):
         self.input_file = input_file
         self.line_col = 0
+        self.line_decoder = line_decoder
         self.term_dims = term_dims
 
     def peek_next_lines(self, count):
@@ -194,9 +199,9 @@ class FileIterator:
 
     def _seek_next_wrapped_line(self):
         line = self.input_file.readline()
-        sanitized_line = sanitize_line(line)
+        decoded_line = self.line_decoder.decode_line(line)
         self.line_col += self.term_dims.cols
-        if self.line_col >= len(sanitized_line):
+        if self.line_col >= len(decoded_line):
             self.line_col = 0
         else:
             self.input_file.seek(-len(line), os.SEEK_CUR)
@@ -212,11 +217,11 @@ class FileIterator:
         line = next(self.prev_line_iterator())
         if not line:
             return
-        sanitized_line = sanitize_line(line)
-        if len(sanitized_line) <= self.term_dims.cols:
+        decoded_line = self.line_decoder.decode_line(line)
+        if len(decoded_line) <= self.term_dims.cols:
             return
         else:
-            for line_col in reversed(range(0, len(sanitized_line), self.term_dims.cols)):
+            for line_col in reversed(range(0, len(decoded_line), self.term_dims.cols)):
                 self.line_col = line_col
                 break
 
@@ -317,8 +322,9 @@ class SearchMode:
     SEARCH_FORWARDS_CHAR = '/'
     SEARCH_BACKWARDS_CHAR = '?'
 
-    def __init__(self, file_iter, screen_input_output, search_history):
+    def __init__(self, file_iter, line_decoder, screen_input_output, search_history):
         self.file_iter = file_iter
+        self.line_decoder = line_decoder
         self.screen_input_output = screen_input_output
         self.search_history = search_history
         self._continue_search = lambda: False
@@ -363,7 +369,7 @@ class SearchMode:
         for line in self.file_iter.next_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(sanitize_line(line)):
+            elif compiled_search_query_regex.search(self.line_decoder.decode_line(line)):
                 next(self.file_iter.prev_line_iterator())
                 self.file_iter.clamp_position_to_last_page()
                 return True
@@ -372,7 +378,7 @@ class SearchMode:
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(sanitize_line(line)):
+            elif compiled_search_query_regex.search(self.line_decoder.decode_line(line)):
                 return True
 
     def _wait_for_user_to_input_search_query(self, search_direction_char):
@@ -406,9 +412,10 @@ class SearchMode:
 
 
 class ScreenInputOutput:
-    def __init__(self, screen, term_dims, color_mask_generator, file_iter):
+    def __init__(self, screen, term_dims, line_decoder, color_mask_generator, file_iter):
         self.screen = screen
         self.term_dims = term_dims
+        self.line_decoder = line_decoder
         self.color_mask_generator = color_mask_generator
         self.file_iter = file_iter
 
@@ -420,7 +427,7 @@ class ScreenInputOutput:
         for i, line in enumerate(self.file_iter.peek_next_lines(self.term_dims.rows)):
             if not line or row == self.term_dims.rows:
                 break
-            line = sanitize_line(line)
+            line = self.line_decoder.decode_line(line)
             if i == 0:
                 line = line[self.file_iter.line_col:]
             color_mask = self.color_mask_generator.generate_color_mask(line)
@@ -459,15 +466,17 @@ def run_curses(screen, input_file, config_filepath):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
+    locale.setlocale(locale.LC_ALL, '')
+    line_decoder = LineDecoder(locale.getpreferredencoding(False))
     search_queries = SearchHistoryFile.load_search_queries()
     search_history = SearchHistory(search_queries)
     config_file_reader = ConfigFileReader(config_filepath)
     regex_to_color = config_file_reader.load_regex_to_color()
     color_mask_generator = ColorMaskGenerator(regex_to_color, search_history)
     term_dims = TerminalDimensions(screen)
-    file_iter = FileIterator(input_file, term_dims)
-    screen_input_output = ScreenInputOutput(screen, term_dims, color_mask_generator, file_iter)
-    search_mode = SearchMode(file_iter, screen_input_output, search_history)
+    file_iter = FileIterator(input_file, line_decoder, term_dims)
+    screen_input_output = ScreenInputOutput(screen, term_dims, line_decoder, color_mask_generator, file_iter)
+    search_mode = SearchMode(file_iter, line_decoder, screen_input_output, search_history)
     tail_mode = TailMode(file_iter, screen_input_output)
     while True:
         try:
@@ -550,7 +559,6 @@ def main():
     def sigterm_handler(signal, frame):
         raise ExitSuccess()
     signal.signal(signal.SIGTERM, sigterm_handler)
-    locale.setlocale(locale.LC_ALL, '')
     try:
         exit_code = run(sys.argv[1:])
     except ExitSuccess as e:
