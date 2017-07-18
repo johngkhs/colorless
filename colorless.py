@@ -78,7 +78,10 @@ class LineDecoder:
         self.encoding = encoding
 
     def decode_line(self, line):
-        return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
+        try:
+            return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
+        except Exception as exception:
+            raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, exception))
 
 
 class SearchHistory:
@@ -459,12 +462,12 @@ class ScreenInputOutput:
         return [(color_id, len(list(group_iter))) for color_id, group_iter in itertools.groupby(wrapped_color_mask)]
 
 
-def run_curses(screen, input_file, config_filepath):
+def run_curses(screen, input_file, config_filepath, encoding):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
     locale.setlocale(locale.LC_ALL, '')
-    line_decoder = LineDecoder(locale.getpreferredencoding(False))
+    line_decoder = LineDecoder(encoding if encoding else locale.getpreferredencoding(False))
     search_queries = SearchHistoryFile.load_search_queries()
     search_history = SearchHistory(search_queries)
     config_file_reader = ConfigFileReader(config_filepath)
@@ -539,6 +542,7 @@ def run(args):
                         'q: quit'])
     arg_parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
+    arg_parser.add_argument('-e', '--encoding', nargs='?')
     arg_parser.add_argument('filepath')
     if len(args) == 0:
         arg_parser.print_help()
@@ -549,7 +553,7 @@ def run(args):
     except EnvironmentError:
         raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(args.filepath))
     with input_file:
-        return curses.wrapper(run_curses, input_file, args.config_filepath)
+        return curses.wrapper(run_curses, input_file, args.config_filepath, args.encoding)
 
 
 def main():
