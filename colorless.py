@@ -281,7 +281,7 @@ class LineColorMaskCalculator:
 
     def get_line_color_mask(self, line):
         color_mask = [LineColorMaskCalculator.NO_COLOR_ID] * len(line)
-        for compiled_regex, color in self._regex_to_color_including_last_search_query():
+        for compiled_regex, color in self._regex_to_color_id_including_last_search_query():
             tokens = compiled_regex.split(line)
             col = 0
             for index, token in enumerate(tokens):
@@ -291,7 +291,7 @@ class LineColorMaskCalculator:
                 col += len(token)
         return color_mask
 
-    def _regex_to_color_including_last_search_query(self):
+    def _regex_to_color_id_including_last_search_query(self):
         regex_to_color_id = collections.OrderedDict(self.regex_to_color_id.items())
         last_search_query = self.search_history.get_last_search_query()
         if last_search_query:
@@ -434,7 +434,7 @@ class ScreenInputOutput:
                 if row == self.term_dims.rows:
                     break
                 self.screen.addstr(row, 0, wrapped_line)
-                self._draw_colored_line(row, wrapped_line, wrapped_color_mask)
+                self._draw_color_mask(row, wrapped_line, wrapped_color_mask)
                 row += 1
         last_visible_col = self.term_dims.cols - 2
         self.screen.addstr(self.term_dims.rows, 0, prompt[:last_visible_col])
@@ -448,15 +448,15 @@ class ScreenInputOutput:
     def _wrap(self, line, cols):
         return [line[i:i + cols] for i in range(0, len(line), cols)]
 
-    def _draw_colored_line(self, row, wrapped_line, wrapped_color_mask):
+    def _draw_color_mask(self, row, wrapped_line, wrapped_color_mask):
         col = 0
-        for color, length in self._distinct_colors(wrapped_color_mask):
+        for color, length in self._contiguous_color_ids(wrapped_color_mask):
             if color != 0:
                 self.screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
             col += length
 
-    def _distinct_colors(self, wrapped_color_mask):
-        return [(color, len(list(group_iter))) for color, group_iter in itertools.groupby(wrapped_color_mask)]
+    def _contiguous_color_ids(self, wrapped_color_mask):
+        return [(color_id, len(list(group_iter))) for color_id, group_iter in itertools.groupby(wrapped_color_mask)]
 
 
 def run_curses(screen, input_file, config_filepath):
