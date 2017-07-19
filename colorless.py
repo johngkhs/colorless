@@ -119,6 +119,13 @@ class FileIterator:
         self.line_decoder = line_decoder
         self.term_dims = term_dims
 
+    def peek_file_size_in_bytes(self):
+        bookmark = self.get_bookmark()
+        self.seek_to_end_of_file()
+        file_size_in_bytes = self.input_file.tell()
+        self.go_to_bookmark(bookmark)
+        return file_size_in_bytes
+
     def peek_next_lines(self, count):
         bookmark = self.get_bookmark()
         lines = [self.input_file.readline() for _ in range(count)]
