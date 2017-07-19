@@ -289,7 +289,7 @@ class LineColorMaskCalculator:
         self.SEARCH_COLOR_ID = 255
         curses.init_pair(self.SEARCH_COLOR_ID, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
-    def get_line_color_mask(self, line):
+    def calculate_color_mask(self, line):
         color_mask = [LineColorMaskCalculator.NO_COLOR_ID] * len(line)
         for compiled_regex, color in self._regex_to_color_id_including_last_search_query():
             tokens = compiled_regex.split(line)
@@ -437,7 +437,7 @@ class ScreenInputOutput:
             line = self.line_decoder.decode_line(line)
             if i == 0:
                 line = line[self.file_iter.line_col:]
-            color_mask = self.line_color_mask_calculator.get_line_color_mask(line)
+            color_mask = self.line_color_mask_calculator.calculate_color_mask(line)
             wrapped_lines = self._wrap(line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
             for (wrapped_line, wrapped_color_mask) in zip(wrapped_lines, wrapped_color_masks):
