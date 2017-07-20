@@ -122,11 +122,12 @@ class FileIterator:
         self.line_decoder = line_decoder
         self.term_dims = term_dims
 
-    def peek_next_lines(self, count):
+    def peek_next_decoded_lines(self, count):
         bookmark = self.get_bookmark()
-        lines = [self.input_file.readline() for _ in range(count)]
+        first_decoded_line = self.line_decoder.decode(self.input_file.readline())[self.line_col:]
+        decoded_lines = [first_decoded_line] + [self.line_decoder.decode(self.input_file.readline()) for _ in range(count)]
         self.go_to_bookmark(bookmark)
-        return lines
+        return decoded_lines
 
     def get_bookmark(self):
         return FileBookmark(self.input_file.tell(), self.line_col)
@@ -409,10 +410,9 @@ class SearchMode:
 
 
 class ScreenInputOutput:
-    def __init__(self, screen, term_dims, line_decoder, line_color_mask_calculator, file_iter):
+    def __init__(self, screen, term_dims, line_color_mask_calculator, file_iter):
         self.screen = screen
         self.term_dims = term_dims
-        self.line_decoder = line_decoder
         self.line_color_mask_calculator = line_color_mask_calculator
         self.file_iter = file_iter
 
@@ -421,10 +421,7 @@ class ScreenInputOutput:
         self.screen.move(0, 0)
         row = 0
         self.screen.erase()
-        for i, line in enumerate(self.file_iter.peek_next_lines(self.term_dims.rows)):
-            decoded_line = self.line_decoder.decode(line)
-            if i == 0:
-                decoded_line = decoded_line[self.file_iter.line_col:]
+        for decoded_line in self.file_iter.peek_next_decoded_lines(self.term_dims.rows):
             color_mask = self.line_color_mask_calculator.calculate_color_mask(decoded_line)
             wrapped_decoded_lines = self._wrap(decoded_line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
@@ -470,7 +467,7 @@ def run_curses(screen, input_file, config_filepath, encoding):
     line_color_mask_calculator = LineColorMaskCalculator(regex_to_color_id, search_history)
     term_dims = TerminalDimensions(screen)
     file_iter = FileIterator(input_file, line_decoder, term_dims)
-    screen_input_output = ScreenInputOutput(screen, term_dims, line_decoder, line_color_mask_calculator, file_iter)
+    screen_input_output = ScreenInputOutput(screen, term_dims, line_color_mask_calculator, file_iter)
     search_mode = SearchMode(file_iter, line_decoder, screen_input_output, search_history)
     tail_mode = TailMode(file_iter, screen_input_output)
     while True:
