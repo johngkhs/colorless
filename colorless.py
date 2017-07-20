@@ -111,6 +111,9 @@ class FileBookmark:
         self.byte_offset = byte_offset
         self.line_col = line_col
 
+    def __gt__(self, other):
+        return self.byte_offset > other.byte_offset or (self.byte_offset == other.byte_offset and self.line_col > other.line_col)
+
 
 class FileIterator:
     def __init__(self, input_file, line_decoder, term_dims):
@@ -118,13 +121,6 @@ class FileIterator:
         self.line_col = 0
         self.line_decoder = line_decoder
         self.term_dims = term_dims
-
-    def peek_file_size_in_bytes(self):
-        bookmark = self.get_bookmark()
-        self.seek_to_end_of_file()
-        file_size_in_bytes = self.input_file.tell()
-        self.go_to_bookmark(bookmark)
-        return file_size_in_bytes
 
     def peek_next_lines(self, count):
         bookmark = self.get_bookmark()
@@ -139,13 +135,34 @@ class FileIterator:
         self.input_file.seek(bookmark.byte_offset)
         self.line_col = bookmark.line_col
 
-    def seek_to_start_of_file(self):
+    def go_to_start_of_file(self):
         self.line_col = 0
         self.input_file.seek(0)
 
-    def seek_to_end_of_file(self):
+    def go_to_end_of_file(self):
         self.line_col = 0
         self.input_file.seek(0, os.SEEK_END)
+
+    def go_to_last_page(self):
+        self.go_to_end_of_file()
+        self.seek_prev_wrapped_lines(self.term_dims.rows)
+
+    def seek_to_percentage_of_file(self, percentage):
+        assert 0.0 <= percentage <= 1.0
+        bookmark = self.get_bookmark()
+        self.go_to_end_of_file()
+        file_size_in_bytes = self.input_file.tell()
+        self.input_file.seek(int(percentage * file_size_in_bytes))
+        next(self.prev_line_iterator())
+        if self.is_past_last_page():
+            self.go_to_last_page()
+
+    def is_past_last_page(self):
+        bookmark = self.get_bookmark()
+        self.go_to_last_page()
+        last_page_bookmark = self.get_bookmark()
+        self.go_to_bookmark(bookmark)
+        return bookmark > last_page_bookmark
 
     def prev_line_iterator(self):
         if self.input_file.tell() == 0:
@@ -178,47 +195,9 @@ class FileIterator:
                 return
             yield line
 
-    # Move to new class
-
-    def seek_to_percentage_of_file(self, percentage):
-        assert 0.0 <= percentage <= 1.0
-        file_size_in_bytes = self.peek_file_size_in_bytes()
-        self.input_file.seek(int(percentage * file_size_in_bytes))
-        next(self.prev_line_iterator())
-        self.clamp_position_to_last_page()
-
     def seek_prev_wrapped_lines(self, count):
         for _ in range(count):
             self._seek_prev_wrapped_line()
-
-    def seek_to_last_page(self):
-        self.seek_to_end_of_file()
-        self.seek_prev_wrapped_lines(self.term_dims.rows)
-
-    def clamp_position_to_last_page(self):
-        position = self.input_file.tell()
-        line_col = self.line_col
-        self.seek_to_last_page()
-        if position < self.input_file.tell() or (position == self.input_file.tell() and line_col < self.line_col):
-            self.input_file.seek(position)
-            self.line_col = line_col
-
-    def seek_next_wrapped_lines(self, count):
-        self._seek_next_wrapped_lines(count)
-        self.clamp_position_to_last_page()
-
-    def _seek_next_wrapped_line(self):
-        line = self.input_file.readline()
-        decoded_line = self.line_decoder.decode_line(line)
-        self.line_col += self.term_dims.cols
-        if self.line_col >= len(decoded_line):
-            self.line_col = 0
-        else:
-            self.input_file.seek(-len(line), os.SEEK_CUR)
-
-    def _seek_next_wrapped_lines(self, count):
-        for _ in range(count):
-            self._seek_next_wrapped_line()
 
     def _seek_prev_wrapped_line(self):
         if self.line_col > 0:
@@ -234,6 +213,21 @@ class FileIterator:
             for line_col in reversed(range(0, len(decoded_line), self.term_dims.cols)):
                 self.line_col = line_col
                 break
+
+    def seek_next_wrapped_lines(self, count):
+        for _ in range(count):
+            self._seek_next_wrapped_line()
+        if self.is_past_last_page():
+            self.go_to_last_page()
+
+    def _seek_next_wrapped_line(self):
+        line = self.input_file.readline()
+        decoded_line = self.line_decoder.decode_line(line)
+        self.line_col += self.term_dims.cols
+        if self.line_col >= len(decoded_line):
+            self.line_col = 0
+        else:
+            self.input_file.seek(-len(line), os.SEEK_CUR)
 
 
 class ConfigFileReader:
@@ -317,7 +311,7 @@ class TailMode:
     def start_tailing(self):
         try:
             while True:
-                self.file_iter.seek_to_last_page()
+                self.file_iter.go_to_last_page()
                 self.screen_input_output.redraw_screen('Waiting for data... (interrupt to abort)')
                 FIFTY_MILLIS = 0.050
                 time.sleep(FIFTY_MILLIS)
@@ -378,7 +372,8 @@ class SearchMode:
                 return False
             elif compiled_search_query_regex.search(self.line_decoder.decode_line(line)):
                 next(self.file_iter.prev_line_iterator())
-                self.file_iter.clamp_position_to_last_page()
+                if self.file_iter.is_past_last_page():
+                    self.file_iter.go_to_last_page()
                 return True
 
     def _search_backwards(self, compiled_search_query_regex):
@@ -504,9 +499,9 @@ def run_curses(screen, input_file, config_filepath, encoding):
             elif user_input == ord('b'):
                 file_iter.seek_prev_wrapped_lines(term_dims.rows)
             elif user_input == ord('g'):
-                file_iter.seek_to_start_of_file()
+                file_iter.go_to_start_of_file()
             elif user_input == ord('G'):
-                file_iter.seek_to_last_page()
+                file_iter.go_to_last_page()
             elif user_input == ord('H'):
                 file_iter.seek_to_percentage_of_file(0.25)
             elif user_input == ord('M'):
