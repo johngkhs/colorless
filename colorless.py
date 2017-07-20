@@ -77,7 +77,7 @@ class LineDecoder:
     def __init__(self, encoding):
         self.encoding = encoding
 
-    def decode_line(self, line):
+    def decode(self, line):
         try:
             return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
         except Exception as exception:
@@ -206,7 +206,7 @@ class FileIterator:
         line = next(self.prev_line_iterator())
         if not line:
             return
-        decoded_line = self.line_decoder.decode_line(line)
+        decoded_line = self.line_decoder.decode(line)
         self.line_col = self.term_dims.cols * int(len(decoded_line) / self.term_dims.cols)
 
     def seek_next_wrapped_lines(self, count):
@@ -217,7 +217,7 @@ class FileIterator:
 
     def _seek_next_wrapped_line(self):
         line = self.input_file.readline()
-        decoded_line = self.line_decoder.decode_line(line)
+        decoded_line = self.line_decoder.decode(line)
         self.line_col += self.term_dims.cols
         if self.line_col >= len(decoded_line):
             self.line_col = 0
@@ -365,7 +365,7 @@ class SearchMode:
         for line in self.file_iter.next_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(self.line_decoder.decode_line(line)):
+            elif compiled_search_query_regex.search(self.line_decoder.decode(line)):
                 next(self.file_iter.prev_line_iterator())
                 if self.file_iter.is_past_last_page():
                     self.file_iter.go_to_last_page()
@@ -375,7 +375,7 @@ class SearchMode:
         for line in self.file_iter.prev_line_iterator():
             if not line:
                 return False
-            elif compiled_search_query_regex.search(self.line_decoder.decode_line(line)):
+            elif compiled_search_query_regex.search(self.line_decoder.decode(line)):
                 return True
 
     def _wait_for_user_to_input_search_query(self, search_direction_char):
@@ -422,7 +422,7 @@ class ScreenInputOutput:
         row = 0
         self.screen.erase()
         for i, line in enumerate(self.file_iter.peek_next_lines(self.term_dims.rows)):
-            decoded_line = self.line_decoder.decode_line(line)
+            decoded_line = self.line_decoder.decode(line)
             if i == 0:
                 decoded_line = decoded_line[self.file_iter.line_col:]
             color_mask = self.line_color_mask_calculator.calculate_color_mask(decoded_line)
