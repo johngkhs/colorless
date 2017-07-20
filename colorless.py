@@ -107,41 +107,41 @@ class SearchHistory:
 
 
 class FileBookmark:
-    def __init__(self, byte_offset, line_col):
+    def __init__(self, byte_offset, decoded_line_col):
         self.byte_offset = byte_offset
-        self.line_col = line_col
+        self.decoded_line_col = decoded_line_col
 
     def __gt__(self, other):
-        return self.byte_offset > other.byte_offset or (self.byte_offset == other.byte_offset and self.line_col > other.line_col)
+        return self.byte_offset > other.byte_offset or (self.byte_offset == other.byte_offset and self.decoded_line_col > other.decoded_line_col)
 
 
 class FileIterator:
     def __init__(self, input_file, line_decoder, term_dims):
         self.input_file = input_file
-        self.line_col = 0
+        self.decoded_line_col = 0
         self.line_decoder = line_decoder
         self.term_dims = term_dims
 
     def peek_next_decoded_lines(self, count):
         bookmark = self.get_bookmark()
-        first_decoded_line = self.line_decoder.decode(self.input_file.readline())[self.line_col:]
+        first_decoded_line = self.line_decoder.decode(self.input_file.readline())[self.decoded_line_col:]
         decoded_lines = [first_decoded_line] + [self.line_decoder.decode(self.input_file.readline()) for _ in range(count)]
         self.go_to_bookmark(bookmark)
         return decoded_lines
 
     def get_bookmark(self):
-        return FileBookmark(self.input_file.tell(), self.line_col)
+        return FileBookmark(self.input_file.tell(), self.decoded_line_col)
 
     def go_to_bookmark(self, bookmark):
         self.input_file.seek(bookmark.byte_offset)
-        self.line_col = bookmark.line_col
+        self.decoded_line_col = bookmark.decoded_line_col
 
     def go_to_start_of_file(self):
-        self.line_col = 0
+        self.decoded_line_col = 0
         self.input_file.seek(0)
 
     def go_to_end_of_file(self):
-        self.line_col = 0
+        self.decoded_line_col = 0
         self.input_file.seek(0, os.SEEK_END)
 
     def go_to_last_page(self):
@@ -201,14 +201,14 @@ class FileIterator:
             self._seek_prev_wrapped_line()
 
     def _seek_prev_wrapped_line(self):
-        if self.line_col > 0:
-            self.line_col = max(0, self.line_col - self.term_dims.cols)
+        if self.decoded_line_col > 0:
+            self.decoded_line_col = max(0, self.decoded_line_col - self.term_dims.cols)
             return
         line = next(self.prev_line_iterator())
         if not line:
             return
         decoded_line = self.line_decoder.decode(line)
-        self.line_col = self.term_dims.cols * int(len(decoded_line) / self.term_dims.cols)
+        self.decoded_line_col = self.term_dims.cols * int(len(decoded_line) / self.term_dims.cols)
 
     def seek_next_wrapped_lines(self, count):
         for _ in range(count):
@@ -219,9 +219,9 @@ class FileIterator:
     def _seek_next_wrapped_line(self):
         line = self.input_file.readline()
         decoded_line = self.line_decoder.decode(line)
-        self.line_col += self.term_dims.cols
-        if self.line_col >= len(decoded_line):
-            self.line_col = 0
+        self.decoded_line_col += self.term_dims.cols
+        if self.decoded_line_col >= len(decoded_line):
+            self.decoded_line_col = 0
         else:
             self.input_file.seek(-len(line), os.SEEK_CUR)
 
