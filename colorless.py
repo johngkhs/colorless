@@ -427,19 +427,17 @@ class ScreenInputOutput:
         row = 0
         self.screen.erase()
         for i, line in enumerate(self.file_iter.peek_next_lines(self.term_dims.rows)):
-            if not line or row == self.term_dims.rows:
-                break
-            line = self.line_decoder.decode_line(line)
+            decoded_line = self.line_decoder.decode_line(line)
             if i == 0:
-                line = line[self.file_iter.line_col:]
-            color_mask = self.line_color_mask_calculator.calculate_color_mask(line)
-            wrapped_lines = self._wrap(line, self.term_dims.cols)
+                decoded_line = decoded_line[self.file_iter.line_col:]
+            color_mask = self.line_color_mask_calculator.calculate_color_mask(decoded_line)
+            wrapped_decoded_lines = self._wrap(decoded_line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
-            for (wrapped_line, wrapped_color_mask) in zip(wrapped_lines, wrapped_color_masks):
+            for (wrapped_decoded_line, wrapped_color_mask) in zip(wrapped_decoded_lines, wrapped_color_masks):
                 if row == self.term_dims.rows:
                     break
-                self.screen.addstr(row, 0, wrapped_line)
-                self._draw_color_mask(row, wrapped_line, wrapped_color_mask)
+                self.screen.addstr(row, 0, wrapped_decoded_line)
+                self._draw_color_mask(row, wrapped_decoded_line, wrapped_color_mask)
                 row += 1
         last_visible_col = self.term_dims.cols - 2
         self.screen.addstr(self.term_dims.rows, 0, prompt[:last_visible_col])
@@ -453,11 +451,11 @@ class ScreenInputOutput:
     def _wrap(self, line, cols):
         return [line[i:i + cols] for i in range(0, len(line), cols)]
 
-    def _draw_color_mask(self, row, wrapped_line, wrapped_color_mask):
+    def _draw_color_mask(self, row, wrapped_decoded_line, wrapped_color_mask):
         col = 0
         for color, length in self._contiguous_color_ids(wrapped_color_mask):
             if color != 0:
-                self.screen.addstr(row, col, wrapped_line[col:col + length], curses.color_pair(color))
+                self.screen.addstr(row, col, wrapped_decoded_line[col:col + length], curses.color_pair(color))
             col += length
 
     def _contiguous_color_ids(self, wrapped_color_mask):
