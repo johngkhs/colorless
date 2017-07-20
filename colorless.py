@@ -312,7 +312,7 @@ class TailMode:
                 FIFTY_MILLIS = 0.050
                 time.sleep(FIFTY_MILLIS)
         except KeyboardInterrupt:
-            pass
+            self.file_iter.go_to_last_page()
 
 
 class SearchMode:
