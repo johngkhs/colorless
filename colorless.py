@@ -207,12 +207,7 @@ class FileIterator:
         if not line:
             return
         decoded_line = self.line_decoder.decode_line(line)
-        if len(decoded_line) <= self.term_dims.cols:
-            return
-        else:
-            for line_col in reversed(range(0, len(decoded_line), self.term_dims.cols)):
-                self.line_col = line_col
-                break
+        self.line_col = self.term_dims.cols * int(len(decoded_line) / self.term_dims.cols)
 
     def seek_next_wrapped_lines(self, count):
         for _ in range(count):
