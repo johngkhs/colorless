@@ -356,10 +356,12 @@ class SearchMode:
         bookmark = self.file_iter.get_bookmark()
         try:
             search_succeeded = search_function()
-            if not search_succeeded:
+            if search_succeeded:
+                self.file_iter.decoded_line_col = 0
+            else:
                 self.file_iter.go_to_bookmark(bookmark)
         except KeyboardInterrupt:
-            self.file_iter.seek(position)
+            self.file_iter.go_to_bookmark(bookmark)
 
     def _search_forwards(self, compiled_search_query_regex):
         next(self.file_iter.next_line_iterator())
