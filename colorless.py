@@ -424,6 +424,7 @@ class ScreenInputOutput:
         row = 0
         self.screen.erase()
         for decoded_line in self.file_iter.peek_next_decoded_lines(self.term_dims.rows):
+            decoded_line = decoded_line.rstrip()
             color_mask = self.line_color_mask_calculator.calculate_color_mask(decoded_line)
             wrapped_decoded_lines = self._wrap(decoded_line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
