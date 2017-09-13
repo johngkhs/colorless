@@ -59,9 +59,13 @@ class SearchHistoryFile:
 
 
 class RegexCompiler:
+    EXCEPTION_TYPES = (re.error, ValueError)
+
     @staticmethod
     def compile_regex(regex, flags=0):
-        return re.compile(r'({0})'.format(regex), flags)
+        compiled_regex = re.compile(r'({0})'.format(regex), flags)
+        compiled_regex.split('') # empty patterns raise an exception
+        return compiled_regex
 
     @staticmethod
     def compile_smartcase_regex(regex):
@@ -77,8 +81,8 @@ class LineDecoder:
     def decode(self, line):
         try:
             return line.decode(self.encoding).rstrip().replace('\x01', '\\x01').replace('\t', '    ')
-        except Exception as exception:
-            raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, exception))
+        except Exception as e:
+            raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, e))
 
 
 class SearchHistory:
@@ -238,8 +242,8 @@ class ConfigFileReader:
         with config_file:
             try:
                 exec(config_file.read(), config)
-            except Exception as exception:
-                raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(self.config_filepath, exception))
+            except Exception as e:
+                raise ExitFailure(os.EX_NOINPUT, '{}: Load failed with error "{}"'.format(self.config_filepath, e))
         REGEX_TO_COLOR = 'regex_to_color'
         if REGEX_TO_COLOR not in config:
             err_msg = '{}: The config must contain a dictionary named {}'.format(self.config_filepath, REGEX_TO_COLOR)
@@ -251,8 +255,8 @@ class ConfigFileReader:
         for color_id, (regex, color) in enumerate(regex_to_color.items(), STARTING_COLOR_ID):
             try:
                 compiled_regex = RegexCompiler.compile_regex(regex)
-            except re.error as exception:
-                raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+            except RegexCompiler.EXCEPTION_TYPES as e:
+                raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, e))
             regex_to_color_id[compiled_regex] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
@@ -338,8 +342,8 @@ class SearchMode:
             return
         try:
             compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(search_query)
-        except re.error as exception:
-            self.screen_input_output.redraw_screen('Compiling regex {} failed with error: "{}" - press any key to continue'.format(search_query, exception))
+        except RegexCompiler.EXCEPTION_TYPES as e:
+            self.screen_input_output.redraw_screen('Compiling regex {} failed with error: "{}" - press any key to continue'.format(search_query, e))
             self.screen_input_output.get_user_input()
             return
         self.search_history.insert_search_query(search_query)
