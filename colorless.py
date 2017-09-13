@@ -42,7 +42,7 @@ class SearchHistoryFile:
             return []
         with search_history_file:
             search_history_file.seek(0)
-            return [line.rstrip('\n') for line in search_history_file.readlines()]
+            return [line.rstrip() for line in search_history_file.readlines()]
 
     @staticmethod
     def write_search_queries(search_queries):
@@ -61,10 +61,7 @@ class SearchHistoryFile:
 class RegexCompiler:
     @staticmethod
     def compile_regex(regex, flags=0):
-        try:
-            return re.compile(r'({0})'.format(regex), flags)
-        except re.error as exception:
-            raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+        return re.compile(r'({0})'.format(regex), flags)
 
     @staticmethod
     def compile_smartcase_regex(regex):
@@ -79,7 +76,7 @@ class LineDecoder:
 
     def decode(self, line):
         try:
-            return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
+            return line.decode(self.encoding).rstrip().replace('\x01', '\\x01').replace('\t', '    ')
         except Exception as exception:
             raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, exception))
 
@@ -252,7 +249,11 @@ class ConfigFileReader:
         regex_to_color_id = collections.OrderedDict()
         STARTING_COLOR_ID = 1
         for color_id, (regex, color) in enumerate(regex_to_color.items(), STARTING_COLOR_ID):
-            regex_to_color_id[RegexCompiler.compile_regex(regex)] = color_id
+            try:
+                compiled_regex = RegexCompiler.compile_regex(regex)
+            except re.error as exception:
+                raise ExitFailure(os.EX_DATAERR, 'Compiling regex {} failed with error: "{}"'.format(regex, exception))
+            regex_to_color_id[compiled_regex] = color_id
             DEFAULT_BACKGROUND_COLOR = -1
             curses.init_pair(color_id, color, DEFAULT_BACKGROUND_COLOR)
         return regex_to_color_id
@@ -335,9 +336,14 @@ class SearchMode:
             pass
         if not search_query:
             return
+        try:
+            compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(search_query)
+        except re.error as exception:
+            self.screen_input_output.redraw_screen('Compiling regex {} failed with error: "{}" - press any key to continue'.format(search_query, exception))
+            self.screen_input_output.get_user_input()
+            return
         self.search_history.insert_search_query(search_query)
         SearchHistoryFile.write_search_queries(self.search_history.get_search_queries())
-        compiled_search_query_regex = RegexCompiler.compile_smartcase_regex(search_query)
         if search_direction_char == SearchMode.SEARCH_FORWARDS_CHAR:
             self._continue_search = lambda: self._search_forwards(compiled_search_query_regex)
             self._continue_reverse_search = lambda: self._search_backwards(compiled_search_query_regex)
@@ -424,7 +430,6 @@ class ScreenInputOutput:
         row = 0
         self.screen.erase()
         for decoded_line in self.file_iter.peek_next_decoded_lines(self.term_dims.rows):
-            decoded_line = decoded_line.rstrip()
             color_mask = self.line_color_mask_calculator.calculate_color_mask(decoded_line)
             wrapped_decoded_lines = self._wrap(decoded_line, self.term_dims.cols)
             wrapped_color_masks = self._wrap(color_mask, self.term_dims.cols)
