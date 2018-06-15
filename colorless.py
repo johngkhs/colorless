@@ -80,7 +80,7 @@ class LineDecoder:
 
     def decode(self, line):
         try:
-            return line.decode(self.encoding).rstrip().replace('\x01', '\\x01').replace('\t', '    ')
+            return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
         except Exception as e:
             raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, e))
 
