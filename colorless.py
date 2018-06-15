@@ -75,12 +75,14 @@ class RegexCompiler:
 
 
 class LineDecoder:
-    def __init__(self, encoding):
+    def __init__(self, encoding, strip_chars_regex):
         self.encoding = encoding
+        self.strip_chars_regex = strip_chars_regex
 
     def decode(self, line):
         try:
-            return line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
+            sanitized_line = line.decode(self.encoding).replace('\x01', '\\x01').replace('\t', '    ')
+            return self.strip_chars_regex.sub('', sanitized_line)
         except Exception as e:
             raise ExitFailure(os.EX_DATAERR, 'Decoding line with encoding {} failed with error: "{}"'.format(self.encoding, e))
 
@@ -466,12 +468,14 @@ class ScreenInputOutput:
         return [(color_id, len(list(group_iter))) for color_id, group_iter in itertools.groupby(wrapped_color_mask)]
 
 
-def run_curses(screen, input_file, config_filepath, encoding):
+def run_curses(screen, input_file, config_filepath, encoding, strip_raw_control_chars):
     curses.use_default_colors()
     VERY_VISIBLE = 2
     curses.curs_set(VERY_VISIBLE)
-    locale.setlocale(locale.LC_ALL, '')
-    line_decoder = LineDecoder(encoding if encoding else locale.getpreferredencoding(False))
+    UNMATCHABLE_REGEX = re.compile('a^')
+    CONTROL_CHARS_REGEX = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+    strip_chars_regex = (CONTROL_CHARS_REGEX if strip_raw_control_chars else UNMATCHABLE_REGEX)
+    line_decoder = LineDecoder(encoding, strip_chars_regex)
     search_queries = SearchHistoryFile.load_search_queries()
     search_history = SearchHistory(search_queries)
     config_file_reader = ConfigFileReader(config_filepath)
@@ -525,6 +529,7 @@ def run_curses(screen, input_file, config_filepath, encoding):
 
 
 def run(args):
+    locale.setlocale(locale.LC_ALL, '')
     description = 'A less-like pager utility with regex highlighting capabilities'
     epilog = '\n'.join(['Available commands:',
                         'j: move down one line',
@@ -546,7 +551,8 @@ def run(args):
                         'q: quit'])
     arg_parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     arg_parser.add_argument('-c', '--config-filepath', metavar='config.py', nargs='?')
-    arg_parser.add_argument('-e', '--encoding', nargs='?')
+    arg_parser.add_argument('-R', '--strip-raw-control-chars', action='store_true')
+    arg_parser.add_argument('-e', '--encoding', nargs='?', default=locale.getpreferredencoding(False))
     arg_parser.add_argument('filepath')
     if len(args) == 0:
         arg_parser.print_help()
@@ -557,7 +563,7 @@ def run(args):
     except EnvironmentError:
         raise ExitFailure(os.EX_NOINPUT, '{}: No such file or directory'.format(args.filepath))
     with input_file:
-        return curses.wrapper(run_curses, input_file, args.config_filepath, args.encoding)
+        return curses.wrapper(run_curses, input_file, args.config_filepath, args.encoding, args.strip_raw_control_chars)
 
 
 def main():
